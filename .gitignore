@@ -6,3 +6,10 @@ static/uploads/
 .env
 node_modules/
 .DS_Store
+
+# Projet iOS Xcode (à supprimer manuellement du dossier)
+Twelve/
+Twelve.xcodeproj/
+TwelveTests/
+TwelveUITests/
+start.sh
