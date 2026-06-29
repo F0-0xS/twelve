@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Erreur {{ status }} – Twelve{% end %}
+{% block body %}
+<nav class="nav">
+  <a href="/" class="nav-back">← Twelve</a>
+</nav>
+<div class="container" style="padding-top:80px;text-align:center;">
+  <div style="font-size:3rem;margin-bottom:16px;">{{ '🔍' if status == 404 else '⚠️' }}</div>
+  <h1 style="font-size:1.3rem;font-weight:700;margin-bottom:8px;">{{ 'Page introuvable' if status == 404 else 'Erreur' }}</h1>
+  <p class="text-muted" style="margin-bottom:32px;">{{ message }}</p>
+  <a href="/" class="btn btn-outline">← Accueil</a>
+</div>
+{% end %}

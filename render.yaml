@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: twelve
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    disk:
+      name: twelve-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: TWELVE_DB_PATH
+        value: /data/twelve.db
+      - key: TWELVE_UPLOAD_DIR
+        value: /data/uploads
+      - key: TWELVE_COOKIE_SECRET
+        generateValue: true

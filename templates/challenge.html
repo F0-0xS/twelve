@@ -1,0 +1,553 @@
+{% extends "base.html" %}
+{% block title %}{{ challenge['name'] }} – Twelve{% end %}
+
+{% block extra_styles %}
+/* ── Countdown ── */
+.countdown-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+}
+.countdown-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.countdown-time  { font-size: 2.8rem; font-weight: 800; letter-spacing: -.03em; color: var(--accent); line-height: 1.1; margin: 4px 0; }
+.countdown-sub   { font-size: .85rem; color: var(--muted); }
+.next-slot-badge { display: inline-block; background: rgba(245,158,11,.15); color: var(--open); padding: 3px 10px; border-radius: 99px; font-size: .75rem; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
+.next-slot-none  { padding: 20px; text-align: center; }
+
+/* ── Participants ── */
+.participants-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 0 4px;
+}
+.capacity {
+  font-size: .8rem;
+  color: var(--muted);
+}
+
+/* ── Share strip ── */
+.share-strip {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.share-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.share-url {
+  flex: 1;
+  font-size: .8rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-btn {
+  padding: 7px 14px;
+  font-size: .8rem;
+  flex-shrink: 0;
+}
+#qr-container { display: flex; justify-content: center; }
+#qr-container canvas, #qr-container img { border-radius: 8px; }
+
+/* ── Rename ── */
+.rename-form {
+  display: none;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+.rename-form.active { display: flex; }
+.rename-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: .9rem;
+}
+.rename-input:focus { outline: none; border-color: var(--accent2); }
+.rename-btn-small { padding: 6px 12px; font-size: .82rem; }
+
+/* ── Join form ── */
+.join-card {
+  background: linear-gradient(135deg, var(--bg2) 0%, rgba(232,213,176,.04) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.join-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+.join-sub   { font-size: .85rem; color: var(--muted); margin-bottom: 20px; }
+
+/* ── Timeline ── */
+.timeline { display: flex; flex-direction: column; gap: 0; padding-bottom: 48px; }
+
+.slot-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  position: relative;
+}
+
+/* Vertical line */
+.slot-row::before {
+  content: '';
+  position: absolute;
+  left: 29px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  z-index: 0;
+}
+.slot-row:first-child::before { top: 28px; }
+.slot-row:last-child::before  { bottom: calc(100% - 28px); }
+
+/* Dot */
+.slot-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+  margin: 21px 15px 0 22px;
+  position: relative;
+  z-index: 1;
+  transition: border-color .2s, background .2s;
+}
+.slot-dot.open     { border-color: var(--open); background: rgba(245,158,11,.2); box-shadow: 0 0 0 3px rgba(245,158,11,.12); }
+.slot-dot.sent     { border-color: var(--success); background: var(--success); }
+.slot-dot.missed   { border-color: #ef4444; background: rgba(239,68,68,.3); }
+.slot-dot.upcoming { border-color: var(--border); }
+.slot-dot.past     { border-color: #333; background: #1a1a1a; }
+
+/* Card in timeline */
+.slot-card {
+  flex: 1;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 8px 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .15s;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.slot-card:hover { border-color: var(--accent2); text-decoration: none; }
+.slot-card.open  { border-color: rgba(245,158,11,.35); }
+.slot-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+.slot-time { font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
+.slot-body  { padding: 0 14px 12px; }
+
+/* Contributions thumbnails */
+.contrib-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.contrib-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.missed-card {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.missing-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.missing-chip {
+  font-size: .72rem;
+  color: var(--muted);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2px 8px;
+  opacity: .6;
+}
+
+/* My slot: highlight border */
+.slot-card.my-slot { border-color: rgba(232,213,176,.25); }
+.slot-card.my-sent { border-color: rgba(34,197,94,.25); }
+{% end %}
+
+{% block body %}
+<nav class="nav">
+  <a href="/" class="nav-back">← Twelve</a>
+  <span style="font-size:.8rem;color:var(--muted)">{{ challenge['challenge_date'] }}</span>
+</nav>
+
+<div class="container" style="padding-top:20px;padding-bottom:40px;">
+
+  <!-- Challenge title -->
+  <div style="margin-bottom:20px;">
+    <h1 style="font-size:1.5rem;font-weight:800;letter-spacing:-.02em;">{{ challenge['name'] }}</h1>
+    <p class="text-sm text-muted mt8">Défi du {{ challenge['challenge_date'] }}</p>
+  </div>
+
+  <!-- Error -->
+  {% if error %}
+  <div class="alert alert-error mt12" style="margin-bottom:16px;">{{ error }}</div>
+  {% end %}
+
+  <!-- ── JOIN FORM (not yet joined) ── -->
+  {% if not participant %}
+  <div class="join-card" style="margin-bottom:20px;">
+    {% if full %}
+      <div class="join-title">Défi complet 🙅</div>
+      <p class="join-sub">Ce défi a déjà 6 participants.</p>
+    {% else %}
+      <div class="join-title">Rejoins le défi</div>
+      <p class="join-sub">Entre ton prénom pour participer.</p>
+      <form method="POST" action="/challenge/{{ challenge['id'] }}" id="joinForm">
+        <div class="input-group">
+          <input
+            class="input"
+            type="text"
+            name="name"
+            placeholder="Ton prénom…"
+            maxlength="30"
+            autocomplete="off"
+            autofocus
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-full mt12" id="joinBtn">
+          <span class="spinner" id="joinSpinner"></span>
+          Rejoindre →
+        </button>
+      </form>
+    {% end %}
+  </div>
+  {% end %}
+
+  <!-- ── PARTICIPANTS ── -->
+  <div class="section-title">Participants <span class="capacity">({{ len(participants) }}/6)</span></div>
+  {% if participants %}
+  <div class="participants-row">
+    {% for p in participants %}
+    <div class="participant-chip">
+      <div class="avatar">{{ p['name'][0].upper() }}</div>
+      {{ p['name'] }}{% if participant and p['id'] == participant['id'] %} <span style="color:var(--muted);font-size:.75rem;">· toi</span>{% end %}
+    </div>
+    {% end %}
+  </div>
+  {% else %}
+  <p class="text-sm text-muted" style="padding:8px 0;">Aucun participant pour l'instant.</p>
+  {% end %}
+
+  <!-- ── RENAME (only when joined) ── -->
+  {% if participant %}
+  <div style="margin-top:8px;">
+    <button class="btn btn-outline rename-btn-small" onclick="toggleRename()" id="renameToggle">✏️ Modifier mon prénom</button>
+    <form class="rename-form" id="renameForm" method="POST" action="/challenge/{{ challenge['id'] }}/rename">
+      <input class="rename-input" type="text" name="name" placeholder="{{ participant['name'] }}" maxlength="30" autocomplete="off" id="renameInput" />
+      <button type="submit" class="btn btn-primary rename-btn-small">OK</button>
+      <button type="button" class="btn btn-outline rename-btn-small" onclick="toggleRename()">Annuler</button>
+    </form>
+  </div>
+  {% end %}
+
+  <!-- ── SHARE LINK ── -->
+  <div class="share-strip mt16">
+    <div class="share-strip-row">
+      <span class="share-url" id="shareUrl">{{ share_url }}</span>
+      <button class="btn btn-outline share-btn" onclick="copyToClipboard('{{ share_url }}', this)">
+        Copier
+      </button>
+    </div>
+    <div id="qr-container"></div>
+  </div>
+
+  <!-- ── NEXT SLOT / COUNTDOWN (if joined) ── -->
+  {% if participant %}
+  <div class="mt24">
+    <div class="countdown-card" id="countdownCard">
+      <div class="next-slot-badge" id="countdownBadge">⏳ …</div>
+      <div class="countdown-time" id="countdownDisplay">--:--</div>
+      <div class="countdown-sub" id="countdownSub"></div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:8px;">🌍 <span id="tzLabel">…</span></div>
+    </div>
+  </div>
+  {% end %}
+
+  <!-- ── TIMELINE ── -->
+  <div class="section-title mt24">Timeline</div>
+
+  {% if participant %}
+  <div class="alert alert-info" style="margin-bottom:14px;font-size:.83rem;">
+    Appuie sur un créneau pour ajouter ta photo ou signaler une absence.
+  </div>
+  {% end %}
+
+  <div class="timeline">
+    {% for slot in slots %}
+    {% set my_c = my_contribs.get(slot['index']) if participant else None %}
+    {% set has_any = len(slot['contributions']) > 0 %}
+
+    {% if participant %}
+    <a class="slot-row" href="/challenge/{{ challenge['id'] }}/slot/{{ slot['index'] }}" style="text-decoration:none;" data-slot="{{ slot['index'] }}" data-hour="{{ slot['hour'] }}">
+    {% else %}
+    <div class="slot-row" data-slot="{{ slot['index'] }}" data-hour="{{ slot['hour'] }}">
+    {% end %}
+
+      <!-- Dot (class updated client-side for timezone) -->
+      <div class="slot-dot
+        {% if my_c and my_c['type'] == 'photo' %}sent
+        {% elif my_c and my_c['type'] == 'missed' %}missed
+        {% else %}{{ slot['status'] }}
+        {% end %}
+      "></div>
+
+      <!-- Card -->
+      <div class="slot-card
+        {% if slot['status'] == 'open' %}open{% end %}
+        {% if my_c and my_c['type'] == 'photo' %}my-sent{% elif my_c %}my-slot{% end %}
+      ">
+        <div class="slot-card-header">
+          <span class="slot-time">{{ slot['label'] }}</span>
+          <!-- Status badge (text updated client-side for timezone) -->
+          {% if my_c and my_c['type'] == 'photo' %}
+            <span class="badge badge-sent">envoyé</span>
+          {% elif my_c and my_c['type'] == 'missed' %}
+            <span class="badge badge-missed">manqué</span>
+          {% elif slot['status'] == 'open' %}
+            <span class="badge badge-open slot-status-badge">ouvert</span>
+          {% elif slot['status'] == 'upcoming' %}
+            <span class="badge badge-upcoming slot-status-badge">à venir</span>
+          {% else %}
+            <span class="badge badge-past slot-status-badge">passé</span>
+          {% end %}
+        </div>
+
+        {% if has_any or (slot['missing_participants'] and slot['status'] != 'upcoming') %}
+        <div class="slot-body">
+          <!-- Contributions -->
+          {% if has_any %}
+          <div class="contrib-row">
+            {% for c in slot['contributions'] %}
+              {% if c['type'] == 'photo' %}
+                <img class="contrib-thumb" src="{{ c['photo_url'] }}" alt="{{ slot['participant_map'].get(c['participant_id'], {}).get('name', '?') }}" loading="lazy" />
+              {% elif c['type'] == 'missed' %}
+                <div class="missed-card" title="{{ c.get('missed_reason', '') }}">
+                  <span>{{ c.get('missed_emoji', '❓') }}</span>
+                </div>
+              {% end %}
+            {% end %}
+          </div>
+          {% end %}
+
+          <!-- Missing participants (past/open slots only) -->
+          {% if slot['missing_participants'] and slot['status'] in ('open', 'past') %}
+          <div class="missing-chips">
+            {% for mp in slot['missing_participants'] %}
+            <span class="missing-chip">{{ mp['name'] }} ·</span>
+            {% end %}
+          </div>
+          {% end %}
+        </div>
+        {% end %}
+      </div>
+
+    {% if participant %}
+    </a>
+    {% else %}
+    </div>
+    {% end %}
+    {% end %}
+  </div>
+
+  <!-- Summary link -->
+  {% if participant %}
+  <div style="text-align:center;padding-bottom:40px;">
+    <a href="/challenge/{{ challenge['id'] }}/summary" class="btn btn-outline">Voir le résumé final</a>
+  </div>
+  {% end %}
+
+</div>
+{% end %}
+
+{% block extra_scripts %}
+// ── Timezone-aware slot status ───────────────────────────────────────────────
+(function() {
+  const SLOT_HOURS = [0,2,4,6,8,10,12,14,16,18,20,22];
+  const challengeDate = "{{ challenge['challenge_date'] }}";
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // Show detected timezone
+  const tzEl = document.getElementById('tzLabel');
+  if (tzEl) tzEl.textContent = tz;
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  // Build slot open/close Date objects using LOCAL time (no timezone suffix)
+  function slotTimes(hour) {
+    const open  = new Date(challengeDate + 'T' + pad(hour) + ':00:00');
+    const closeH = hour + 2;
+    const close = closeH >= 24
+      ? new Date(new Date(challengeDate + 'T23:59:59').getTime() + 1000)
+      : new Date(challengeDate + 'T' + pad(closeH) + ':00:00');
+    return { open, close };
+  }
+
+  function getStatus(hour) {
+    const now = new Date();
+    const { open, close } = slotTimes(hour);
+    if (now < open)  return 'upcoming';
+    if (now < close) return 'open';
+    return 'past';
+  }
+
+  // ── Update slot rows ──────────────────────────────────────────────────────
+  const BADGE_LABELS = { open:'ouvert', upcoming:'à venir', past:'passé' };
+  const BADGE_CLASSES = { open:'badge-open', upcoming:'badge-upcoming', past:'badge-past' };
+
+  document.querySelectorAll('[data-slot]').forEach(function(row) {
+    const hour   = parseInt(row.dataset.hour, 10);
+    const status = getStatus(hour);
+
+    // Dot: only update if not already sent/missed (user's own contribution)
+    const dot = row.querySelector('.slot-dot');
+    if (dot && !dot.classList.contains('sent') && !dot.classList.contains('missed')) {
+      dot.classList.remove('open','upcoming','past');
+      dot.classList.add(status);
+    }
+
+    // Card open border
+    const card = row.querySelector('.slot-card');
+    if (card) card.classList.toggle('open', status === 'open');
+
+    // Badge: only update status badges (not sent/missed)
+    const badge = row.querySelector('.slot-status-badge');
+    if (badge) {
+      badge.className = 'badge slot-status-badge ' + BADGE_CLASSES[status];
+      badge.textContent = BADGE_LABELS[status];
+    }
+  });
+
+  // ── Countdown (fully client-side, timezone-aware) ─────────────────────────
+  {% if participant %}
+  const cardEl   = document.getElementById('countdownCard');
+  const badgeEl  = document.getElementById('countdownBadge');
+  const displayEl= document.getElementById('countdownDisplay');
+  const subEl    = document.getElementById('countdownSub');
+
+  // Find open slot first, then first upcoming
+  let targetHour = null, targetType = null;
+  for (const h of SLOT_HOURS) {
+    const s = getStatus(h);
+    if (s === 'open')     { targetHour = h; targetType = 'open'; break; }
+    if (s === 'upcoming' && targetHour === null) { targetHour = h; targetType = 'upcoming'; }
+  }
+
+  if (targetHour !== null) {
+    const { open, close } = slotTimes(targetHour);
+    const target = targetType === 'open' ? close : open;
+    const slotLabel = pad(targetHour) + 'h00';
+
+    if (badgeEl) badgeEl.textContent = targetType === 'open' ? '🟡 Créneau ouvert' : '⏳ Prochain créneau';
+    if (subEl)   subEl.innerHTML = targetType === 'open'
+      ? 'avant la fermeture du créneau <strong>' + slotLabel + '</strong>'
+      : 'avant le créneau <strong>' + slotLabel + '</strong>';
+
+    function tick() {
+      const diff = target - new Date();
+      if (!displayEl) return;
+      if (diff <= 0) { location.reload(); return; }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      displayEl.textContent = h > 0 ? `${h}h${pad(m)}` : `${pad(m)}:${pad(s)}`;
+    }
+    tick();
+    setInterval(tick, 1000);
+  } else {
+    // All slots past → défi terminé
+    if (cardEl) cardEl.innerHTML = `
+      <div style="font-size:1.8rem;">🏁</div>
+      <div style="font-weight:700;margin-top:8px;">Défi terminé !</div>
+      <a href="/challenge/{{ challenge['id'] }}/summary" class="btn btn-primary mt16">Voir le résumé →</a>`;
+  }
+
+  // Auto-refresh every 30s
+  setTimeout(() => location.reload(), 30000);
+  {% end %}
+
+  // ── Join form spinner ─────────────────────────────────────────────────────
+  {% if not participant %}
+  const joinForm = document.getElementById('joinForm');
+  if (joinForm) {
+    joinForm.addEventListener('submit', function() {
+      const btn = document.getElementById('joinBtn');
+      const sp  = document.getElementById('joinSpinner');
+      if (btn) { btn.disabled = true; if (sp) sp.style.display = 'block'; }
+    });
+  }
+  {% end %}
+})();
+
+// ── QR Code ──────────────────────────────────────────────────────────────────
+(function() {
+  const shareUrl = "{{ share_url }}";
+  const container = document.getElementById('qr-container');
+  if (!container) return;
+  const script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+  script.onload = function() {
+    new QRCode(container, {
+      text: shareUrl,
+      width: 140,
+      height: 140,
+      colorDark: '#e8d5b0',
+      colorLight: '#111111',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  };
+  document.head.appendChild(script);
+})();
+
+// ── Rename toggle ─────────────────────────────────────────────────────────────
+function toggleRename() {
+  const form  = document.getElementById('renameForm');
+  const btn   = document.getElementById('renameToggle');
+  const input = document.getElementById('renameInput');
+  if (!form) return;
+  const active = form.classList.toggle('active');
+  if (btn) btn.style.display = active ? 'none' : '';
+  if (active && input) { input.value = ''; input.focus(); }
+}
+{% end %}

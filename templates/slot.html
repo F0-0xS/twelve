@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}{{ slot['label'] }} – {{ challenge['name'] }}{% end %}
+
+{% block extra_styles %}
+/* ── Tabs ── */
+.tabs { display: flex; gap: 0; background: var(--bg3); border-radius: var(--radius-sm); padding: 4px; margin-bottom: 24px; }
+.tab {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  text-align: center;
+}
+.tab.active { background: var(--bg2); color: var(--text); border: 1px solid var(--border); }
+
+/* ── Photo panel ── */
+#photoPanel, #missedPanel { display: none; }
+#photoPanel.active, #missedPanel.active { display: block; }
+
+/* ── Camera / upload area ── */
+.media-area {
+  background: var(--bg3);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .2s;
+}
+.media-area:hover { border-color: var(--accent2); }
+
+#preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  top: 0; left: 0;
+  display: none;
+  border-radius: calc(var(--radius) - 2px);
+}
+#videoEl {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  top: 0; left: 0;
+  display: none;
+  border-radius: calc(var(--radius) - 2px);
+}
+.media-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+.media-icon { font-size: 2.5rem; opacity: .4; }
+.media-hint { font-size: .8rem; color: var(--muted); text-align: center; padding: 0 16px; }
+
+.media-actions { display: flex; gap: 8px; width: 100%; }
+
+/* Video overlay controls */
+.video-overlay {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  gap: 10px;
+  z-index: 10;
+}
+.capture-btn {
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem;
+  transition: transform .1s;
+}
+.capture-btn:active { transform: scale(.93); }
+.cancel-cam-btn {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: rgba(0,0,0,.6);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text);
+  font-size: .8rem;
+  display: flex; align-items: center; justify-content: center;
+  align-self: center;
+}
+
+/* Retake overlay */
+.retake-overlay {
+  position: absolute;
+  top: 8px; right: 8px;
+  z-index: 10;
+  display: none;
+}
+
+/* ── Missed card options ── */
+.missed-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.missed-option {
+  background: var(--bg3);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 12px;
+  cursor: pointer;
+  text-align: center;
+  transition: all .15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.missed-option:hover   { border-color: var(--accent2); }
+.missed-option.selected { border-color: var(--accent); background: rgba(232,213,176,.07); }
+.missed-emoji { font-size: 1.6rem; }
+.missed-label { font-size: .82rem; font-weight: 600; color: var(--text); }
+
+/* ── My existing contribution ── */
+.existing-contrib {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.existing-photo { width: 100%; max-height: 300px; object-fit: cover; border-radius: var(--radius-sm); }
+.existing-missed-card {
+  width: 100px; height: 100px;
+  background: #111;
+  border: 1px solid #222;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 2rem;
+}
+{% end %}
+
+{% block body %}
+<nav class="nav">
+  <a href="/challenge/{{ challenge['id'] }}" class="nav-back">← {{ challenge['name'] }}</a>
+  <span class="badge badge-{{ slot['status'] }}">{{ slot['label'] }}</span>
+</nav>
+
+<div class="container" style="padding-top:20px;padding-bottom:48px;">
+
+  {% if error %}
+  <div class="alert alert-error" style="margin-bottom:16px;">{{ error }}</div>
+  {% end %}
+
+  <!-- ── Already contributed ── -->
+  {% if my_contribution %}
+  <div class="existing-contrib">
+    {% if my_contribution['type'] == 'photo' %}
+      <img class="existing-photo" src="{{ my_contribution['photo_url'] }}" alt="Ta photo" />
+      <p class="text-sm text-muted">Tu as déjà envoyé une photo pour ce créneau.</p>
+    {% else %}
+      <div class="existing-missed-card">
+        <span>{{ my_contribution.get('missed_emoji', '❓') }}</span>
+      </div>
+      <div style="text-align:center;">
+        <div class="fw600">{{ my_contribution.get('missed_reason', '') }}</div>
+        <p class="text-sm text-muted">Carte manquée envoyée.</p>
+      </div>
+    {% end %}
+    <a href="/challenge/{{ challenge['id'] }}" class="btn btn-outline btn-full">← Retour à la timeline</a>
+    <p class="text-xs text-muted">Tu peux remplacer ta contribution en soumettant à nouveau.</p>
+  </div>
+  {% end %}
+
+  <!-- ── Slot info ── -->
+  <div style="margin-bottom:20px;">
+    <h1 style="font-size:1.4rem;font-weight:800;">Créneau {{ slot['label'] }}</h1>
+    <p class="text-sm text-muted mt8">{{ challenge['name'] }} · {{ challenge['challenge_date'] }}</p>
+  </div>
+
+  <!-- ── Contributions from others ── -->
+  {% if slot['contributions'] %}
+  <div class="section-title">Contributions</div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+    {% for c in slot['contributions'] %}
+    {% set p_name = slot['participant_map'].get(c['participant_id'], {}).get('name', '?') %}
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+      {% if c['type'] == 'photo' %}
+        <img src="{{ c['photo_url'] }}" alt="{{ p_name }}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" loading="lazy"/>
+      {% else %}
+        <div style="width:80px;height:80px;background:#111;border:1px solid #222;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:1.6rem;">
+          <span>{{ c.get('missed_emoji','❓') }}</span>
+        </div>
+      {% end %}
+      <span style="font-size:.7rem;color:var(--muted);">{{ p_name }}</span>
+    </div>
+    {% end %}
+  </div>
+  {% end %}
+
+  <!-- ── Add contribution ── -->
+  <div class="section-title">Ta contribution</div>
+
+  {% if slot['status'] == 'upcoming' %}
+  <div style="background:#1a1a1a;border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;text-align:center;color:var(--muted);">
+    ⏳ Ce créneau n'a pas encore commencé.
+  </div>
+  {% elif slot['status'] == 'past' %}
+  <!-- Créneau passé : carte d'absence uniquement -->
+  {% elif slot['status'] == 'open' %}
+  <!-- Tabs (créneau ouvert seulement) -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('photo', this)">📷 Photo</button>
+    <button class="tab" onclick="switchTab('missed', this)">🃏 Carte manquée</button>
+  </div>
+  {% end %}
+
+  <!-- ── PHOTO PANEL (créneau ouvert seulement) ── -->
+  {% if slot['status'] == 'open' %}
+  <div id="photoPanel" class="active">
+    <form method="POST" action="/challenge/{{ challenge['id'] }}/slot/{{ slot['index'] }}" enctype="multipart/form-data" id="photoForm">
+      <input type="hidden" name="action" value="photo" />
+
+      <!-- Hidden file input (used by both camera capture and file picker) -->
+      <input type="file" name="photo" id="fileInput" accept="image/*" capture="environment" style="display:none;" />
+      <!-- Canvas for camera capture -->
+      <canvas id="captureCanvas" style="display:none;"></canvas>
+
+      <!-- Media area -->
+      <div class="media-area" id="mediaArea">
+        <video id="videoEl" autoplay playsinline muted></video>
+        <img id="preview" alt="Aperçu" />
+
+        <!-- Placeholder (shown when nothing is happening) -->
+        <div class="media-placeholder" id="mediaPlaceholder">
+          <div class="media-icon">📷</div>
+          <div class="media-hint">Prends une photo ou importe depuis ton appareil</div>
+        </div>
+
+        <!-- Video controls (shown during camera use) -->
+        <div class="video-overlay" id="videoOverlay">
+          <button type="button" class="cancel-cam-btn" id="cancelCamBtn" title="Annuler">✕</button>
+          <button type="button" class="capture-btn" id="captureBtnEl" title="Prendre la photo">📸</button>
+        </div>
+
+        <!-- Retake button (shown after preview) -->
+        <div class="retake-overlay" id="retakeOverlay">
+          <button type="button" class="btn btn-ghost" style="font-size:.8rem;padding:6px 12px;" onclick="resetMedia()">Rechoisir</button>
+        </div>
+      </div>
+
+      <div class="media-actions mt12">
+        <button type="button" class="btn btn-outline btn-full" id="cameraBtn" onclick="startCamera()">
+          📷 Caméra
+        </button>
+        <button type="button" class="btn btn-outline btn-full" onclick="document.getElementById('fileInput').click()">
+          🗂 Importer
+        </button>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full mt16" id="photoSubmitBtn" disabled>
+        <span class="spinner" id="photoSpinner"></span>
+        Envoyer la photo
+      </button>
+    </form>
+  </div>
+
+  {% end %}
+
+  <!-- ── MISSED PANEL (créneau ouvert ou passé) ── -->
+  {% if slot['status'] in ('open', 'past') %}
+  {% if slot['status'] == 'past' %}
+  <p class="text-sm text-muted" style="margin-bottom:12px;">Ce créneau est terminé. Tu peux encore envoyer une carte d'absence.</p>
+  {% end %}
+  <div id="missedPanel" {% if slot['status'] == 'open' %}{% else %}class="active"{% end %}>
+    <form method="POST" action="/challenge/{{ challenge['id'] }}/slot/{{ slot['index'] }}" id="missedForm">
+      <input type="hidden" name="action" value="missed" />
+      <input type="hidden" name="reason" id="missedReason" value="" />
+      <input type="hidden" name="emoji"  id="missedEmoji"  value="" />
+
+      <div class="missed-grid">
+        {% for reason, emoji in missed_options %}
+        <div class="missed-option" onclick="selectMissed('{{ reason }}', '{{ emoji }}', this)">
+          <span class="missed-emoji">{{ emoji }}</span>
+          <span class="missed-label">{{ reason }}</span>
+        </div>
+        {% end %}
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full" id="missedSubmitBtn" disabled>
+        <span class="spinner" id="missedSpinner"></span>
+        Envoyer la carte
+      </button>
+    </form>
+  </div>
+  {% end %}
+
+</div>
+{% end %}
+
+{% block extra_scripts %}
+// ── Tab switching ──────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  const photo = document.getElementById('photoPanel');
+  const missed = document.getElementById('missedPanel');
+  if (photo) photo.classList.toggle('active', name === 'photo');
+  if (missed) missed.classList.toggle('active', name === 'missed');
+  if (name !== 'photo') stopCamera();
+}
+
+// ── Missed card selection ──────────────────────────────────
+function selectMissed(reason, emoji, el) {
+  document.querySelectorAll('.missed-option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('missedReason').value = reason;
+  document.getElementById('missedEmoji').value = emoji;
+  document.getElementById('missedSubmitBtn').disabled = false;
+}
+
+const missedForm = document.getElementById('missedForm');
+if (missedForm) missedForm.addEventListener('submit', function() {
+  const btn = document.getElementById('missedSubmitBtn');
+  btn.disabled = true;
+  document.getElementById('missedSpinner').style.display = 'block';
+});
+
+// ── Photo JS (créneau ouvert seulement) ───────────────────
+const fileInput = document.getElementById('fileInput');
+if (fileInput) {
+fileInput.addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => showPreview(e.target.result);
+  reader.readAsDataURL(file);
+});
+
+// ── Camera ─────────────────────────────────────────────────
+let stream = null;
+
+async function startCamera() {
+  // If camera not supported, fall back to file picker
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById('fileInput').click();
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+    const video = document.getElementById('videoEl');
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById('mediaPlaceholder').style.display = 'none';
+    document.getElementById('videoOverlay').style.display = 'flex';
+  } catch(err) {
+    // Permission denied or no camera → file picker
+    document.getElementById('fileInput').click();
+  }
+}
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  const video = document.getElementById('videoEl');
+  video.style.display = 'none';
+  video.srcObject = null;
+  document.getElementById('videoOverlay').style.display = 'none';
+}
+
+document.getElementById('captureBtnEl').addEventListener('click', function() {
+  const video = document.getElementById('videoEl');
+  const canvas = document.getElementById('captureCanvas');
+  canvas.width  = video.videoWidth  || 1280;
+  canvas.height = video.videoHeight || 960;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+
+  canvas.toBlob(blob => {
+    stopCamera();
+    // Inject into file input via DataTransfer
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
+      fileInput.files = dt.files;
+    } catch(e) {
+      // DataTransfer not supported (some browsers) – use preview URL only
+    }
+    showPreview(canvas.toDataURL('image/jpeg', 0.9));
+  }, 'image/jpeg', 0.9);
+});
+
+document.getElementById('cancelCamBtn').addEventListener('click', function() {
+  stopCamera();
+  document.getElementById('mediaPlaceholder').style.display = 'flex';
+});
+
+// ── Preview ────────────────────────────────────────────────
+function showPreview(src) {
+  const preview = document.getElementById('preview');
+  preview.src = src;
+  preview.style.display = 'block';
+  document.getElementById('mediaPlaceholder').style.display = 'none';
+  document.getElementById('retakeOverlay').style.display = 'block';
+  document.getElementById('photoSubmitBtn').disabled = false;
+  document.getElementById('mediaArea').style.minHeight = '280px';
+}
+
+function resetMedia() {
+  document.getElementById('preview').style.display = 'none';
+  document.getElementById('preview').src = '';
+  document.getElementById('retakeOverlay').style.display = 'none';
+  document.getElementById('mediaPlaceholder').style.display = 'flex';
+  document.getElementById('photoSubmitBtn').disabled = true;
+  fileInput.value = '';
+}
+
+// ── Photo form submit ──────────────────────────────────────
+document.getElementById('photoForm').addEventListener('submit', function(e) {
+  // If file input is empty but we have a canvas capture, we need to re-attach
+  if (!fileInput.files || !fileInput.files.length) {
+    const preview = document.getElementById('preview');
+    if (!preview.src || preview.src === window.location.href) {
+      e.preventDefault();
+      alert('Sélectionne ou prends une photo d\'abord.');
+      return;
+    }
+    // Convert dataURL to blob and inject
+    e.preventDefault();
+    fetch(preview.src)
+      .then(r => r.blob())
+      .then(blob => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
+        fileInput.files = dt.files;
+        document.getElementById('photoSubmitBtn').disabled = true;
+        document.getElementById('photoSpinner').style.display = 'block';
+        this.submit();
+      });
+    return;
+  }
+  document.getElementById('photoSubmitBtn').disabled = true;
+  document.getElementById('photoSpinner').style.display = 'block';
+});
+} // end if (fileInput)
+{% end %}

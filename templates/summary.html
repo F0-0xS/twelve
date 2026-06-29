@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Résumé – {{ challenge['name'] }}{% end %}
+
+{% block extra_styles %}
+.slideshow {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ss-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 50;
+}
+.ss-title   { font-size: .9rem; font-weight: 700; color: #fff; }
+.ss-counter { font-size: .8rem; color: rgba(255,255,255,.5); }
+
+.slides-viewport { flex: 1; position: relative; overflow: hidden; }
+.slides-track {
+  display: flex;
+  height: 100%;
+  transition: transform .35s cubic-bezier(.4,0,.2,1);
+  will-change: transform;
+}
+
+.slide {
+  min-width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 64px 0 80px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.slide-header   { padding: 0 16px 12px; flex-shrink: 0; }
+.slide-time     { font-size: 1.4rem; font-weight: 800; letter-spacing: -.02em; color: #fff; }
+.slide-date     { font-size: .8rem; color: rgba(255,255,255,.4); margin-top: 2px; }
+
+/* Grids */
+.slide-grid { flex: 1; display: grid; gap: 3px; padding-bottom: 4px; }
+.grid-1 { grid-template-columns: 1fr; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: 1fr 1fr; }
+.grid-3 > .cell:first-child { grid-column: 1 / -1; }
+.grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.grid-5 { grid-template-columns: 1fr 1fr; }
+.grid-5 > .cell:first-child { grid-column: 1 / -1; }
+.grid-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+.cell          { position: relative; overflow: hidden; background: #111; min-height: 120px; }
+.cell-img      { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cell-missed   { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: #0d0d0d; }
+.cell-missed-emoji { font-size: 2rem; }
+.cell-missed-label { font-size: .72rem; color: rgba(255,255,255,.35); font-weight: 600; }
+.cell-empty    { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #0a0a0a; color: rgba(255,255,255,.15); font-size: .75rem; }
+.cell-name     { position: absolute; bottom: 0; left: 0; right: 0; padding: 18px 8px 6px; font-size: .7rem; color: rgba(255,255,255,.8); font-weight: 600; background: linear-gradient(transparent,rgba(0,0,0,.7)); text-align: center; }
+
+.ss-bottombar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 20px;
+  background: rgba(0,0,0,.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  gap: 10px;
+  z-index: 50;
+}
+.ss-nav { display: flex; align-items: center; gap: 8px; }
+.ss-btn {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.15);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.ss-btn:hover    { background: rgba(255,255,255,.2); }
+.ss-btn:disabled { opacity: .25; pointer-events: none; }
+.ss-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+  overflow: hidden;
+}
+.ss-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.25);
+  transition: all .2s;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.ss-dot.active { background: var(--accent); width: 14px; border-radius: 3px; }
+.ss-share {
+  padding: 8px 14px;
+  font-size: .8rem;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 99px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ss-share:active { opacity: .8; }
+
+@keyframes fadeOut { to { opacity: 0; } }
+.swipe-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(255,255,255,.5);
+  font-size: .85rem;
+  pointer-events: none;
+  animation: fadeOut 1s 2.5s forwards;
+  z-index: 5;
+  white-space: nowrap;
+}
+{% end %}
+
+{% block body %}
+<div class="slideshow">
+
+  <div class="ss-topbar">
+    <a href="/challenge/{{ challenge['id'] }}" style="color:rgba(255,255,255,.5);font-size:.85rem;text-decoration:none;">← Retour</a>
+    <span class="ss-title">{{ challenge['name'] }}</span>
+    <span class="ss-counter" id="ssCounter">1 / 12</span>
+  </div>
+
+  <div class="slides-viewport" id="slidesViewport">
+    <div class="slides-track" id="slidesTrack">
+
+      {% for slide in slides %}
+      <div class="slide">
+        <div class="slide-header">
+          <div class="slide-time">{{ slide['slot']['label'] }}</div>
+          <div class="slide-date">{{ challenge['challenge_date'] }}</div>
+        </div>
+
+        <div class="slide-grid grid-{{ n_participants }}">
+          {% for cell in slide['cells'] %}
+          <div class="cell">
+            {% set c = cell['contribution'] %}
+            {% set p = cell['participant'] %}
+            {% if c and c['type'] == 'photo' %}
+              <img class="cell-img" src="{{ c['photo_url'] }}" alt="{{ p['name'] }}" loading="lazy" />
+            {% elif c and c['type'] == 'missed' %}
+              <div class="cell-missed">
+                <span class="cell-missed-emoji">{{ c.get('missed_emoji', '❓') }}</span>
+                <span class="cell-missed-label">{{ c.get('missed_reason', 'Manqué') }}</span>
+              </div>
+            {% else %}
+              <div class="cell-empty">–</div>
+            {% end %}
+            <div class="cell-name">{{ p['name'] }}</div>
+          </div>
+          {% end %}
+        </div>
+      </div>
+      {% end %}
+
+    </div>
+    <div class="swipe-hint">← Glisse →</div>
+  </div>
+
+  <div class="ss-bottombar">
+    <div class="ss-nav">
+      <button class="ss-btn" id="prevBtn" onclick="goTo(currentSlide-1)" disabled>‹</button>
+      <button class="ss-btn" id="nextBtn" onclick="goTo(currentSlide+1)">›</button>
+    </div>
+
+    <div class="ss-dots" id="ssDots">
+      {% for i, slide in enumerate(slides) %}
+      <div class="ss-dot" onclick="goTo({{ i }})"></div>
+      {% end %}
+    </div>
+
+    <button class="ss-share" onclick="shareChallenge()">Partager</button>
+  </div>
+
+</div>
+{% end %}
+
+{% block extra_scripts %}
+const TOTAL = 12;
+let currentSlide = 0;
+
+const track   = document.getElementById('slidesTrack');
+const counter = document.getElementById('ssCounter');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const dots    = document.querySelectorAll('.ss-dot');
+
+function goTo(idx) {
+  if (idx < 0 || idx >= TOTAL) return;
+  currentSlide = idx;
+  track.style.transform = `translateX(-${idx * 100}%)`;
+  counter.textContent = `${idx + 1} / ${TOTAL}`;
+  prevBtn.disabled = idx === 0;
+  nextBtn.disabled = idx === TOTAL - 1;
+  dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goTo(currentSlide + 1);
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   goTo(currentSlide - 1);
+});
+
+let touchStartX = 0, touchStartY = 0;
+const viewport = document.getElementById('slidesViewport');
+viewport.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+viewport.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40)
+    goTo(currentSlide + (dx < 0 ? 1 : -1));
+}, { passive: true });
+
+function shareChallenge() {
+  const url = '{{ request.protocol }}://{{ request.host }}/challenge/{{ challenge["id"] }}';
+  if (navigator.share) {
+    navigator.share({ title: '{{ challenge["name"] }} – Twelve', url }).catch(() => {});
+  } else {
+    copyToClipboard(url, document.querySelector('.ss-share'));
+  }
+}
+
+goTo(0);
+{% end %}
