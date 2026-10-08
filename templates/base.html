@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="theme-color" content="#0d0d0d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>{% block title %}Twelve{% end %}</title>
   <style>
     /* ── Reset & base ─────────────────────────────────────── */
@@ -257,7 +260,7 @@
   {% block body %}{% end %}
 
   <script>
-    // Global utils
+    // ── Global utils ────────────────────────────────────────
     function copyToClipboard(text, btn) {
       navigator.clipboard.writeText(text).then(() => {
         const orig = btn.textContent;
@@ -275,6 +278,13 @@
     }
 
     {% block extra_scripts %}{% end %}
+
+    // ── Service Worker registration ───────────────────────────
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(function(e) {
+        console.warn('[SW] registration failed:', e);
+      });
+    }
   </script>
 </body>
 </html>

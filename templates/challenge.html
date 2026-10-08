@@ -165,8 +165,8 @@
   margin-top: 8px;
 }
 .contrib-thumb {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 78px;
   border-radius: 6px;
   object-fit: cover;
   border: 1px solid var(--border);
@@ -203,6 +203,56 @@
 /* My slot: highlight border */
 .slot-card.my-slot { border-color: rgba(232,213,176,.25); }
 .slot-card.my-sent { border-color: rgba(34,197,94,.25); }
+
+/* ── Collapsed slots ── */
+.slot-card.collapsed { margin: 2px 0; }
+.slot-card.collapsed .slot-card-header { padding: 6px 14px; }
+.slot-card.collapsed .slot-body { display: none; }
+
+.mini-status {
+  display: none;
+  flex: 1;
+  align-items: center;
+  gap: 3px;
+  padding: 0 8px;
+}
+.slot-card.collapsed .mini-status { display: flex; }
+
+.mini-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mini-dot.sent    { background: var(--success); }
+.mini-dot.missed  { background: #ef4444; }
+.mini-dot.waiting { background: var(--bg3); border: 1px solid #333; }
+
+/* ── Participant status chips ── */
+.psc-list { display: flex; flex-direction: column; gap: 5px; margin: 6px 0; }
+.psc-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--bg3);
+  border: 1px solid transparent;
+}
+.psc-avatar {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .67rem; font-weight: 700;
+  color: var(--accent2);
+  flex-shrink: 0;
+}
+.psc-name { flex: 1; font-size: .82rem; font-weight: 600; }
+.psc-badge { font-size: .8rem; }
+.psc-item.sent   { border-color: rgba(34,197,94,.15); }
+.psc-item.missed { border-color: rgba(239,68,68,.15); }
+.psc-item.sent   .psc-badge { color: var(--success); }
+.psc-item.missed .psc-badge { color: #ef4444; }
+.psc-item.waiting .psc-badge { color: var(--muted); opacity: .5; }
 {% end %}
 
 {% block body %}
@@ -234,6 +284,7 @@
       <div class="join-title">Rejoins le défi</div>
       <p class="join-sub">Entre ton prénom pour participer.</p>
       <form method="POST" action="/challenge/{{ challenge['id'] }}" id="joinForm">
+        <input type="hidden" name="utc_offset_minutes" id="joinOffsetInput" />
         <div class="input-group">
           <input
             class="input"
@@ -270,7 +321,7 @@
   <p class="text-sm text-muted" style="padding:8px 0;">Aucun participant pour l'instant.</p>
   {% end %}
 
-  <!-- ── RENAME (only when joined) ── -->
+  <!-- ── RENAME + NOTIFS (only when joined) ── -->
   {% if participant %}
   <div style="margin-top:8px;">
     <button class="btn btn-outline rename-btn-small" onclick="toggleRename()" id="renameToggle">✏️ Modifier mon prénom</button>
@@ -280,7 +331,11 @@
       <button type="button" class="btn btn-outline rename-btn-small" onclick="toggleRename()">Annuler</button>
     </form>
   </div>
+  <div id="notif-banner" style="margin-top:8px;">
+    <button class="btn btn-outline btn-full" id="notifBtn" onclick="subscribeNotifs()">🔔 Activer les notifications</button>
+  </div>
   {% end %}
+
 
   <!-- ── SHARE LINK ── -->
   <div class="share-strip mt16">
@@ -303,6 +358,45 @@
       <div style="font-size:.72rem;color:var(--muted);margin-top:8px;">🌍 <span id="tzLabel">…</span></div>
     </div>
   </div>
+  {% end %}
+
+  <!-- ── QUICK PHOTO (créneau actif) ── -->
+  {% if participant %}
+  <div id="quickPhotoBtn" style="display:none;margin:16px 0;">
+    <a id="quickPhotoLink" href="#" class="btn btn-primary btn-full" style="font-size:1.05rem;padding:16px;display:flex;align-items:center;justify-content:center;gap:10px;text-decoration:none;">
+      <span style="font-size:1.4rem;">📸</span>
+      <span id="quickPhotoLabel">Prendre ma photo</span>
+    </a>
+  </div>
+  <script>
+  (function(){
+    var CDATE = "{{ challenge['challenge_date'] }}";
+    var SLOT_HOURS = [1,3,5,7,9,11,13,15,17,19,21,23];
+    var slotLinks = {
+      {% for slot in slots %}{{ slot['hour'] }}: '/challenge/{{ challenge["id"] }}/slot/{{ slot["index"] }}',{% end %}
+    };
+    function p2(n) { return String(n).padStart(2,'0'); }
+    function slotIsOpen(hour) {
+      var now = new Date();
+      var open = new Date(CDATE + 'T' + p2(hour) + ':00:00');
+      return now >= open && now < new Date(open.getTime() + 3600000);
+    }
+    var openHour = null;
+    for (var i = 0; i < SLOT_HOURS.length; i++) {
+      if (slotIsOpen(SLOT_HOURS[i])) { openHour = SLOT_HOURS[i]; break; }
+    }
+    if (openHour !== null && slotLinks[openHour]) {
+      var btn = document.getElementById('quickPhotoBtn');
+      var link = document.getElementById('quickPhotoLink');
+      var lbl = document.getElementById('quickPhotoLabel');
+      if (btn && link && lbl) {
+        link.href = slotLinks[openHour];
+        lbl.textContent = 'Prendre ma photo — ' + p2(openHour) + 'h00';
+        btn.style.display = 'block';
+      }
+    }
+  })();
+  </script>
   {% end %}
 
   <!-- ── TIMELINE ── -->
@@ -340,6 +434,11 @@
       ">
         <div class="slot-card-header">
           <span class="slot-time">{{ slot['label'] }}</span>
+          <!-- Mini status dots (visible when collapsed) -->
+          <div class="mini-status">
+            {% for c in slot['contributions'] %}<div class="mini-dot {% if c['type'] == 'photo' %}sent{% else %}missed{% end %}"></div>{% end %}
+            {% if slot['status'] != 'upcoming' %}{% for mp in slot['missing_participants'] %}<div class="mini-dot waiting"></div>{% end %}{% end %}
+          </div>
           <!-- Status badge (text updated client-side for timezone) -->
           {% if my_c and my_c['type'] == 'photo' %}
             <span class="badge badge-sent">envoyé</span>
@@ -356,29 +455,25 @@
 
         {% if has_any or (slot['missing_participants'] and slot['status'] != 'upcoming') %}
         <div class="slot-body">
-          <!-- Contributions -->
-          {% if has_any %}
-          <div class="contrib-row">
+          <div class="psc-list">
             {% for c in slot['contributions'] %}
-              {% if c['type'] == 'photo' %}
-                <img class="contrib-thumb" src="{{ c['photo_url'] }}" alt="{{ slot['participant_map'].get(c['participant_id'], {}).get('name', '?') }}" loading="lazy" />
-              {% elif c['type'] == 'missed' %}
-                <div class="missed-card" title="{{ c.get('missed_reason', '') }}">
-                  <span>{{ c.get('missed_emoji', '❓') }}</span>
-                </div>
+              {% set pname = slot['participant_map'].get(c['participant_id'], {}).get('name', '?') %}
+              <div class="psc-item {% if c['type'] == 'photo' %}sent{% else %}missed{% end %}">
+                <div class="psc-avatar">{{ pname[0].upper() }}</div>
+                <span class="psc-name">{{ pname }}</span>
+                <span class="psc-badge">{% if c['type'] == 'photo' %}✓{% else %}×{% end %}</span>
+              </div>
+            {% end %}
+            {% if slot['status'] in ('open', 'past') %}
+              {% for mp in slot['missing_participants'] %}
+              <div class="psc-item waiting">
+                <div class="psc-avatar">{{ mp['name'][0].upper() }}</div>
+                <span class="psc-name">{{ mp['name'] }}</span>
+                <span class="psc-badge">○</span>
+              </div>
               {% end %}
             {% end %}
           </div>
-          {% end %}
-
-          <!-- Missing participants (past/open slots only) -->
-          {% if slot['missing_participants'] and slot['status'] in ('open', 'past') %}
-          <div class="missing-chips">
-            {% for mp in slot['missing_participants'] %}
-            <span class="missing-chip">{{ mp['name'] }} ·</span>
-            {% end %}
-          </div>
-          {% end %}
         </div>
         {% end %}
       </div>
@@ -391,10 +486,17 @@
     {% end %}
   </div>
 
-  <!-- Summary link -->
+  <!-- Summary link + Quit -->
   {% if participant %}
-  <div style="text-align:center;padding-bottom:40px;">
+  <div style="text-align:center;padding-bottom:16px;">
     <a href="/challenge/{{ challenge['id'] }}/summary" class="btn btn-outline">Voir le résumé final</a>
+  </div>
+  <div style="text-align:center;padding-bottom:48px;">
+    <form method="POST" action="/challenge/{{ challenge['id'] }}/leave" onsubmit="return confirm('Quitter ce défi ? Tes contributions seront supprimées.');">
+      <button type="submit" style="background:none;border:none;color:var(--muted);font-size:.82rem;cursor:pointer;text-decoration:underline;padding:8px;">
+        Quitter le défi
+      </button>
+    </form>
   </div>
   {% end %}
 
@@ -402,9 +504,39 @@
 {% end %}
 
 {% block extra_scripts %}
+// ── App badge : SET ou CLEAR selon l'état réel du créneau ────────────────────
+(function() {
+  var CDATE = "{{ challenge['challenge_date'] }}";
+  var SLOT_HOURS = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23];
+  function p2(n) { return String(n).padStart(2,'0'); }
+  function slotIsOpen(hour) {
+    var now   = new Date();
+    var open  = new Date(CDATE + 'T' + p2(hour) + ':00:00');
+    var close = new Date(open.getTime() + 3600000);
+    return now >= open && now < close;
+  }
+  var openHour = null;
+  for (var i = 0; i < SLOT_HOURS.length; i++) {
+    if (slotIsOpen(SLOT_HOURS[i])) { openHour = SLOT_HOURS[i]; break; }
+  }
+  {% if participant %}
+  var slotIdxByHour = { {% for slot in slots %}{{ slot['hour'] }}: {{ slot['index'] }},{% end %} };
+  var submitted = { {% for idx in my_contribs %}{{ idx }}: true,{% end %} };
+  var ci = openHour !== null ? slotIdxByHour[openHour] : undefined;
+  var alreadySent = ci !== undefined && submitted[ci];
+  if (openHour !== null && !alreadySent) {
+    try { if (navigator.setAppBadge) navigator.setAppBadge(1); } catch(_) {}
+  } else {
+    try { if (navigator.clearAppBadge) navigator.clearAppBadge(); } catch(_) {}
+  }
+  {% else %}
+  try { if (navigator.clearAppBadge) navigator.clearAppBadge(); } catch(_) {}
+  {% end %}
+})();
+
 // ── Timezone-aware slot status ───────────────────────────────────────────────
 (function() {
-  const SLOT_HOURS = [0,2,4,6,8,10,12,14,16,18,20,22];
+  const SLOT_HOURS = {{ list(slot_hours) }};
   const challengeDate = "{{ challenge['challenge_date'] }}";
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -417,10 +549,7 @@
   // Build slot open/close Date objects using LOCAL time (no timezone suffix)
   function slotTimes(hour) {
     const open  = new Date(challengeDate + 'T' + pad(hour) + ':00:00');
-    const closeH = hour + 2;
-    const close = closeH >= 24
-      ? new Date(new Date(challengeDate + 'T23:59:59').getTime() + 1000)
-      : new Date(challengeDate + 'T' + pad(closeH) + ':00:00');
+    const close = new Date(open.getTime() + 60 * 60 * 1000);
     return { open, close };
   }
 
@@ -459,6 +588,21 @@
     }
   });
 
+  // ── Collapse all slots except the active one ──────────────────────────────
+  let activeHour = null;
+  for (const h of SLOT_HOURS) {
+    const s = getStatus(h);
+    if (s === 'open') { activeHour = h; break; }
+    if (s === 'upcoming' && activeHour === null) activeHour = h;
+  }
+  if (activeHour !== null) {
+    document.querySelectorAll('[data-slot]').forEach(function(row) {
+      const hour = parseInt(row.dataset.hour, 10);
+      const card = row.querySelector('.slot-card');
+      if (card && hour !== activeHour) card.classList.add('collapsed');
+    });
+  }
+
   // ── Countdown (fully client-side, timezone-aware) ─────────────────────────
   {% if participant %}
   const cardEl   = document.getElementById('countdownCard');
@@ -496,19 +640,59 @@
     tick();
     setInterval(tick, 1000);
   } else {
-    // All slots past → défi terminé
-    if (cardEl) cardEl.innerHTML = `
-      <div style="font-size:1.8rem;">🏁</div>
-      <div style="font-weight:700;margin-top:8px;">Défi terminé !</div>
-      <a href="/challenge/{{ challenge['id'] }}/summary" class="btn btn-primary mt16">Voir le résumé →</a>`;
+    // All slots past — check both conditions: time AND everyone filled their slots
+    const midnight = new Date({{ recap_unlock_utc_ms }});  // UTC ms, computed server-side
+    const allFilled = {{ 'true' if all_filled else 'false' }};
+    const waitingNames = {% raw json_encode(waiting_names) %};
+    const now = new Date();
+
+    if (now >= midnight && allFilled) {
+      // Fully unlocked: time passed AND everyone filled every slot
+      if (cardEl) cardEl.innerHTML = `
+        <div style="font-size:1.8rem;">🏁</div>
+        <div style="font-weight:700;margin-top:8px;">Défi terminé !</div>
+        <a href="/challenge/{{ challenge['id'] }}/summary" class="btn btn-primary mt16">Voir le résumé →</a>`;
+    } else if (now >= midnight && !allFilled) {
+      // Midnight passed but some participants haven't filled all slots
+      const who = waitingNames.join(', ');
+      const verb = waitingNames.length === 1 ? 'doit' : 'doivent';
+      if (cardEl) cardEl.innerHTML = `
+        <div style="font-size:1.8rem;">⏳</div>
+        <div style="font-weight:700;margin-top:8px;">En attente…</div>
+        <p style="font-size:.85rem;color:var(--muted);margin-top:8px;">${who} ${verb} encore compléter ses créneaux.</p>`;
+    } else {
+      // Countdown to midnight
+      if (badgeEl) badgeEl.textContent = '🌙 Résumé bientôt';
+      if (subEl) subEl.innerHTML = `avant le résumé · <span style="font-size:.75em;opacity:.6">${tz}</span>`;
+      function tick() {
+        const diff = midnight - new Date();
+        if (!displayEl) return;
+        if (diff <= 0) { location.reload(); return; }
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        displayEl.textContent = h > 0 ? `${h}h${pad(m)}` : `${pad(m)}:${pad(s)}`;
+      }
+      tick();
+      setInterval(tick, 1000);
+    }
   }
+
+  // Hide "Voir le résumé final" link until time AND all slots filled
+  document.querySelectorAll('a[href$="/summary"]').forEach(el => {
+    const tooEarly = new Date() < new Date({{ recap_unlock_utc_ms }});
+    const allFilled = {{ 'true' if all_filled else 'false' }};
+    if (tooEarly || !allFilled) el.closest('div').style.display = 'none';
+  });
 
   // Auto-refresh every 30s
   setTimeout(() => location.reload(), 30000);
   {% end %}
 
-  // ── Join form spinner ─────────────────────────────────────────────────────
+  // ── Join form : offset timezone + spinner ────────────────────────────────
   {% if not participant %}
+  var joinOff = document.getElementById('joinOffsetInput');
+  if (joinOff) joinOff.value = -new Date().getTimezoneOffset();
   const joinForm = document.getElementById('joinForm');
   if (joinForm) {
     joinForm.addEventListener('submit', function() {
@@ -550,4 +734,80 @@ function toggleRename() {
   if (btn) btn.style.display = active ? 'none' : '';
   if (active && input) { input.value = ''; input.focus(); }
 }
+
+// ── Push notifications ────────────────────────────────────────────────────────
+{% if participant %}
+(function() {
+  const VAPID_PUB = '{{ vapid_public_key }}';
+  const CHALLENGE_ID = '{{ challenge["id"] }}';
+
+  function urlB64ToUint8(b64) {
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, c => c.charCodeAt(0));
+  }
+
+  function showNotifOk() {
+    const el = document.getElementById('notif-banner');
+    if (el) el.innerHTML = '<p style="color:var(--muted);font-size:.82rem;padding:6px 0;">🔔 Notifications activées pour ce défi.</p>';
+  }
+
+  window.subscribeNotifs = async function() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert('Les notifications push ne sont pas disponibles sur ce navigateur.');
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      const btn = document.getElementById('notifBtn');
+      if (btn) btn.textContent = '🔕 Notifications refusées';
+      return;
+    }
+    try {
+      // Register SW if not yet controlling (was missing before)
+      if (!navigator.serviceWorker.controller) {
+        await navigator.serviceWorker.register('/sw.js');
+        await new Promise(r => setTimeout(r, 500));
+      }
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('SW timeout')), 8000))
+      ]);
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8(VAPID_PUB),
+      });
+      const resp = await fetch('/challenge/' + CHALLENGE_ID + '/push-subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      if (resp.ok) showNotifOk();
+      else throw new Error('server error');
+    } catch(e) {
+      const btn = document.getElementById('notifBtn');
+      if (btn) btn.textContent = '⚠️ Erreur — réessaie';
+      console.error('[push]', e);
+    }
+  };
+
+  // If already subscribed, skip the button
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.pushManager.getSubscription().then(sub => {
+        if (sub) {
+          showNotifOk();
+          // Re-POST to heal any missed server-side save
+          fetch('/challenge/' + CHALLENGE_ID + '/push-subscribe', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sub.toJSON()),
+          }).catch(() => {});
+        }
+      });
+    }).catch(() => {});
+  }
+
+  // Badge only cleared after photo submitted (in slot.html)
+})();
+{% end %}
 {% end %}

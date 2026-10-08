@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comment rejoindre un défi Twelve</title>
+<style>
+  :root {
+    --bg:      #0d0d0d;
+    --bg2:     #161616;
+    --bg3:     #1f1f1f;
+    --border:  #2a2a2a;
+    --text:    #f0f0f0;
+    --muted:   #666;
+    --accent:  #e8d5b0;
+    --accent2: #c4a97d;
+    --open:    #f59e0b;
+    --success: #22c55e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 0 0 60px;
+    line-height: 1.5;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 48px 24px 36px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-size: 2.8rem;
+    font-weight: 900;
+    letter-spacing: -.02em;
+    color: var(--accent);
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .hero p {
+    color: var(--muted);
+    font-size: .9rem;
+    margin-top: 10px;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 24px 20px 10px;
+    color: var(--muted);
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Steps ── */
+  .section { padding: 0 16px; }
+  .step {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 12px;
+  }
+  .step-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .step-num {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0d0d0d;
+    font-size: .78rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-title {
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .step-title small {
+    display: block;
+    font-weight: 400;
+    font-size: .78rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .step-body {
+    color: #aaa;
+    font-size: .85rem;
+    padding-left: 42px;
+  }
+
+  /* ── Icon steps ── */
+  .icon-step {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 7px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: .83rem;
+    color: #ccc;
+  }
+  .icon-step:last-child { margin-bottom: 0; }
+  .icon-step .ico { font-size: 1.2rem; flex-shrink: 0; }
+
+  /* ── Bullet list ── */
+  .step-body ul { list-style: none; padding: 0; }
+  .step-body ul li {
+    padding: 4px 0 4px 18px;
+    position: relative;
+    font-size: .85rem;
+    color: #aaa;
+    line-height: 1.55;
+  }
+  .step-body ul li::before {
+    content: '→';
+    color: var(--accent2);
+    position: absolute;
+    left: 0;
+    top: 5px;
+    font-size: .78rem;
+    line-height: 1;
+  }
+
+  /* ── Tip ── */
+  .tip {
+    border-left: 3px solid var(--accent2);
+    background: rgba(196,169,125,.06);
+    border-radius: 0 8px 8px 0;
+    padding: 9px 12px;
+    margin-top: 10px;
+    font-size: .8rem;
+    color: #aaa;
+  }
+  .tip strong { color: var(--accent); }
+
+  /* ── Link ── */
+  .app-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-weight: 700;
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .app-link:hover { text-decoration: underline; }
+
+  /* ── Slots grid ── */
+  .slots-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-top: 10px;
+  }
+  .slot-chip {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 5px 0;
+    text-align: center;
+    font-size: .72rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .slot-chip.open {
+    border-color: var(--open);
+    color: var(--open);
+  }
+
+  /* ── Alert box ── */
+  .alert {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 8px 16px 0;
+    font-size: .84rem;
+    color: #999;
+    text-align: center;
+  }
+  .alert strong { color: var(--text); display: block; margin-bottom: 3px; }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    padding: 32px 20px 0;
+    color: var(--muted);
+    font-size: .78rem;
+  }
+  .footer strong { color: #555; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="logo">Twelve</div>
+  <p>Défi photo 24h entre proches · 12 créneaux · Aucun compte</p>
+</div>
+
+<div class="divider">Pour commencer</div>
+
+<div class="section">
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">
+        Installe l'app sur ton iPhone
+        <small>À faire dans Safari — une seule fois</small>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="icon-step">
+        <span class="ico">🔗</span>
+        <span>Ouvre ce lien dans Safari&ensp;<a class="app-link" href="https://fooxs.pythonanywhere.com">fooxs.pythonanywhere.com</a></span>
+      </div>
+      <div class="icon-step">
+        <span class="ico">⬆️</span>
+        <span>Appuie sur le bouton <strong style="color:var(--text)">Partager</strong> (carré avec une flèche, en bas de Safari)</span>
+      </div>
+      <div class="icon-step">
+        <span class="ico">📱</span>
+        <span>Choisis <strong style="color:var(--text)">« Sur l'écran d'accueil »</strong></span>
+      </div>
+      <div class="icon-step">
+        <span class="ico">✅</span>
+        <span>Appuie sur <strong style="color:var(--text)">Ajouter</strong> — l'icône Twelve apparaît sur ton bureau</span>
+      </div>
+      <div class="tip">
+        <strong>Pourquoi ?</strong> Ouvrir l'app depuis l'icône (pas depuis Safari) est nécessaire pour recevoir les notifications et la pastille rouge.
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">
+        Rejoins le défi
+        <small>Via QR code ou lien partagé</small>
+      </div>
+    </div>
+    <div class="step-body">
+      <ul>
+        <li>Ouvre Twelve depuis l'icône sur ton écran d'accueil</li>
+        <li>Via QR code : scanne-le avec l'appareil photo, puis ouvre le lien dans Safari</li>
+        <li>Via un lien : colle-le dans le champ « Rejoindre un défi »</li>
+        <li>Entre ton prénom et appuie sur Rejoindre</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">
+        Active les notifications
+        <small>Pour ne rater aucun créneau</small>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="icon-step">
+        <span class="ico">🔔</span>
+        <span>Sur la page du défi, appuie sur <strong style="color:var(--text)">« Activer les notifications »</strong></span>
+      </div>
+      <div class="icon-step">
+        <span class="ico">✅</span>
+        <span>Autorise les notifications quand iOS te le demande</span>
+      </div>
+      <div class="tip">
+        <strong>Résultat :</strong> Tu reçois une notification et une pastille rouge sur l'icône à chaque ouverture de créneau.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="divider">Comment ça marche</div>
+
+<div class="section">
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div class="step-title">Les 12 créneaux photo</div>
+    </div>
+    <div class="step-body">
+      <p style="margin-bottom:10px;">Toutes les 2h, un créneau s'ouvre pendant 1 heure. Tu as 60 minutes pour envoyer ta photo.</p>
+      <div class="slots-grid">
+        <div class="slot-chip">01h00</div>
+        <div class="slot-chip">03h00</div>
+        <div class="slot-chip">05h00</div>
+        <div class="slot-chip">07h00</div>
+        <div class="slot-chip">09h00</div>
+        <div class="slot-chip open">11h00 ●</div>
+        <div class="slot-chip">13h00</div>
+        <div class="slot-chip">15h00</div>
+        <div class="slot-chip">17h00</div>
+        <div class="slot-chip">19h00</div>
+        <div class="slot-chip">21h00</div>
+        <div class="slot-chip">23h00</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div class="step-title">Envoyer ta photo</div>
+    </div>
+    <div class="step-body">
+      <ul>
+        <li>Reçois la notification et appuie dessus pour ouvrir l'app</li>
+        <li>Le bouton 📸 Prendre ma photo apparaît directement en haut</li>
+        <li>Prends la photo ou choisis-en une depuis ta galerie</li>
+        <li>Si tu rates un créneau, tu peux indiquer la raison</li>
+      </ul>
+      <div class="tip">
+        <strong>La pastille disparaît</strong> automatiquement une fois ta photo envoyée.
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <div class="step-title">Le résumé final</div>
+    </div>
+    <div class="step-body">
+      <p>À minuit, le récapitulatif se déverrouille — toutes les photos de tous les participants, créneau par créneau.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="alert">
+  <strong>Maximum 6 participants par défi</strong>
+  Partage le lien ou le QR code uniquement aux personnes invitées.
+</div>
+
+<div class="footer">
+  <strong>Twelve</strong> · <a class="app-link" href="https://fooxs.pythonanywhere.com">fooxs.pythonanywhere.com</a><br>
+  <span style="color:#444;">Aucun compte requis · iPhone via Safari uniquement</span>
+</div>
+
+</body>
+</html>

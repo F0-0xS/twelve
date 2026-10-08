@@ -51,6 +51,69 @@
 }
 .step-text strong { color: var(--text); font-weight: 600; }
 .step-text small  { color: var(--muted); font-size: .85rem; }
+
+/* ── Start date toggle ── */
+.start-toggle {
+  display: flex;
+  gap: 0;
+  background: var(--bg3);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+}
+.toggle-btn {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  text-align: center;
+}
+.toggle-btn.active {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* ── Swipe-to-delete ── */
+.challenge-item {
+  position: relative;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.challenge-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--text);
+  position: relative;
+  z-index: 1;
+  transform: translateX(0);
+  transition: transform .2s ease;
+  will-change: transform;
+}
+.challenge-delete-btn {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 88px;
+  background: #ef4444;
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  font-size: .85rem;
+  cursor: pointer;
+  z-index: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
 {% end %}
 
 {% block body %}
@@ -68,6 +131,24 @@
     </p>
   </div>
 
+  {% if active_challenges %}
+  <div class="section-title" style="margin-top:8px;">Mes défis en cours</div>
+  <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+    {% for c in active_challenges %}
+    <div class="challenge-item">
+      <button class="challenge-delete-btn" onclick="forgetChallenge('{{ c['id'] }}', event)">Supprimer</button>
+      <a class="challenge-link" href="/challenge/{{ c['id'] }}">
+        <div>
+          <div style="font-weight:700;">{{ c['name'] }}</div>
+          <div style="font-size:.8rem;color:var(--muted);">{{ c['challenge_date'] }}</div>
+        </div>
+        <span style="color:var(--accent);font-size:1.1rem;">→</span>
+      </a>
+    </div>
+    {% end %}
+  </div>
+  {% end %}
+
   <div class="home-form">
     {% if error %}
     <div class="alert alert-error mt12">{{ error }}</div>
@@ -75,6 +156,7 @@
 
     <form method="POST" action="/" id="createForm">
       <input type="hidden" name="challenge_date" id="challengeDateInput" />
+      <input type="hidden" name="utc_offset_minutes" id="utcOffsetInput" />
       <div class="input-group">
         <label class="label" for="name">Nom du défi</label>
         <input
@@ -89,6 +171,13 @@
           required
         />
       </div>
+      <div class="input-group mt16">
+        <label class="label">Début du défi</label>
+        <div class="start-toggle">
+          <button type="button" class="toggle-btn" id="todayBtn" onclick="setStartDate('today')">📅 Aujourd'hui</button>
+          <button type="button" class="toggle-btn active" id="tomorrowBtn" onclick="setStartDate('tomorrow')">🌅 Demain</button>
+        </div>
+      </div>
       <button type="submit" class="btn btn-primary btn-full mt16" id="createBtn">
         <span class="spinner" id="createSpinner"></span>
         Créer le défi →
@@ -96,17 +185,36 @@
     </form>
   </div>
 
-  {% if my_challenges %}
-  <div class="section-title" style="margin-top:32px;">Mes défis</div>
+  <div class="home-form" style="padding-top:0;padding-bottom:32px;">
+    <div class="section-title">Rejoindre un défi</div>
+    <div class="input-group">
+      <label class="label" for="joinLinkInput">Lien du défi</label>
+      <input
+        class="input"
+        type="url"
+        id="joinLinkInput"
+        placeholder="https://fooxs.pythonanywhere.com/challenge/…"
+        autocomplete="off"
+        inputmode="url"
+      />
+    </div>
+    <button class="btn btn-outline btn-full mt12" onclick="joinViaLink()">Rejoindre →</button>
+  </div>
+
+  {% if past_challenges %}
+  <div class="section-title" style="margin-top:8px;">Défis passés</div>
   <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
-    {% for c in my_challenges %}
-    <a href="/challenge/{{ c['id'] }}" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:#111;border:1px solid var(--border);border-radius:var(--radius-sm);text-decoration:none;color:var(--text);">
-      <div>
-        <div style="font-weight:700;">{{ c['name'] }}</div>
-        <div style="font-size:.8rem;color:var(--muted);">{{ c['challenge_date'] }}</div>
-      </div>
-      <span style="color:var(--accent);font-size:1.1rem;">→</span>
-    </a>
+    {% for c in past_challenges %}
+    <div class="challenge-item">
+      <button class="challenge-delete-btn" onclick="forgetChallenge('{{ c['id'] }}', event)">Supprimer</button>
+      <a class="challenge-link" href="/challenge/{{ c['id'] }}">
+        <div>
+          <div style="font-weight:700;">{{ c['name'] }}</div>
+          <div style="font-size:.8rem;color:var(--muted);">{{ c['challenge_date'] }}</div>
+        </div>
+        <span style="color:var(--accent);font-size:1.1rem;">→</span>
+      </a>
+    </div>
     {% end %}
   </div>
   {% end %}
@@ -147,11 +255,31 @@
 {% end %}
 
 {% block extra_scripts %}
-// Défi commence demain (YYYY-MM-DD en heure locale)
-const tomorrow = new Date();
-tomorrow.setDate(tomorrow.getDate() + 1);
-document.getElementById('challengeDateInput').value =
-  tomorrow.toLocaleDateString('en-CA');
+function joinViaLink() {
+  const val = document.getElementById('joinLinkInput').value.trim();
+  if (!val) return;
+  // Accept full URL or bare ID
+  const match = val.match(/\/challenge\/([a-f0-9]{6,16})/);
+  if (match) {
+    location.href = '/challenge/' + match[1];
+  } else if (/^[a-f0-9]{6,16}$/.test(val)) {
+    location.href = '/challenge/' + val;
+  } else {
+    alert('Lien invalide.\nColle le lien complet du défi (ex: https://fooxs.pythonanywhere.com/challenge/abc12345)');
+  }
+}
+
+function setStartDate(when) {
+  const d = new Date();
+  if (when === 'tomorrow') d.setDate(d.getDate() + 1);
+  document.getElementById('challengeDateInput').value = d.toLocaleDateString('en-CA');
+  document.getElementById('todayBtn').classList.toggle('active', when === 'today');
+  document.getElementById('tomorrowBtn').classList.toggle('active', when === 'tomorrow');
+}
+// Défaut : demain
+setStartDate('tomorrow');
+// Capture UTC offset (minutes, positive = east of UTC)
+document.getElementById('utcOffsetInput').value = -new Date().getTimezoneOffset();
 
 document.getElementById('createForm').addEventListener('submit', function() {
   const btn = document.getElementById('createBtn');
@@ -159,4 +287,110 @@ document.getElementById('createForm').addEventListener('submit', function() {
   btn.disabled = true;
   spinner.style.display = 'block';
 });
+
+// ── Swipe-to-delete (WhatsApp style) ─────────────────────────────────────────
+(function() {
+  const SNAP = 88;    // delete button width
+  const TRIGGER = 50; // swipe distance to snap open
+
+  document.querySelectorAll('.challenge-item').forEach(function(item) {
+    const link = item.querySelector('.challenge-link');
+    if (!link) return;
+    let startX = 0, startY = 0, isOpen = false, swiping = false;
+
+    link.addEventListener('touchstart', function(e) {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      swiping = true;
+    }, { passive: true });
+
+    link.addEventListener('touchmove', function(e) {
+      if (!swiping) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if (Math.abs(dy) > Math.abs(dx) + 5) { swiping = false; return; }
+      const base = isOpen ? -SNAP : 0;
+      const x = Math.min(0, Math.max(base + dx, -SNAP));
+      link.style.transition = 'none';
+      link.style.transform = 'translateX(' + x + 'px)';
+    }, { passive: true });
+
+    link.addEventListener('touchend', function(e) {
+      if (!swiping) return;
+      swiping = false;
+      const dx = e.changedTouches[0].clientX - startX;
+      link.style.transition = 'transform .2s ease';
+      if (!isOpen && dx < -TRIGGER) {
+        link.style.transform = 'translateX(-' + SNAP + 'px)';
+        isOpen = true;
+      } else if (isOpen && dx > TRIGGER) {
+        link.style.transform = 'translateX(0)';
+        isOpen = false;
+      } else {
+        link.style.transform = isOpen ? 'translateX(-' + SNAP + 'px)' : 'translateX(0)';
+      }
+    });
+
+    // Tapping the link when open → close instead of navigate
+    link.addEventListener('click', function(e) {
+      if (isOpen) {
+        e.preventDefault();
+        link.style.transition = 'transform .2s ease';
+        link.style.transform = 'translateX(0)';
+        isOpen = false;
+      }
+    });
+  });
+
+  // Close any open item when touching outside
+  document.addEventListener('touchstart', function(e) {
+    document.querySelectorAll('.challenge-item').forEach(function(item) {
+      if (!item.contains(e.target)) {
+        const link = item.querySelector('.challenge-link');
+        if (link) { link.style.transition = 'transform .2s ease'; link.style.transform = 'translateX(0)'; }
+      }
+    });
+  }, { passive: true });
+
+  // ── Badge : effacer si aucun créneau n'est ouvert pour l'utilisateur ────────
+  (function() {
+    if (!navigator.clearAppBadge) return;
+    const SLOT_HOURS = [1,3,5,7,9,11,13,15,17,19,21,23];
+    const now = new Date();
+    const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD local
+    const currentHour = now.getHours();
+    const challengeDates = [
+      {% for c in my_challenges %}"{{ c['challenge_date'] }}",{% end %}
+    ];
+    const hasOpenSlot = challengeDates.some(function(d) {
+      return d === todayStr && SLOT_HOURS.indexOf(currentHour) !== -1;
+    });
+    if (!hasOpenSlot) {
+      try { navigator.clearAppBadge(); } catch(_) {}
+    }
+  })();
+
+  window.forgetChallenge = async function(challengeId, e) {
+    e.stopPropagation();
+    // Remove push subscription for this challenge before forgetting
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch('/challenge/' + challengeId + '/push-unsubscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          }).catch(() => {});
+        }
+      }
+    } catch(_) {}
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/challenge/' + challengeId + '/forget';
+    document.body.appendChild(form);
+    form.submit();
+  };
+})();
 {% end %}

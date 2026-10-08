@@ -1,21 +1,46 @@
 """
 Twelve – Main Tornado application
 """
+from __future__ import annotations
 import os
 import io
 import json
 import uuid
 import socket
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
+import threading
 import tornado.web
 import tornado.ioloop
 import tornado.options
-from PIL import Image
+from PIL import Image, ImageOps
 
 import db
 
+# ─── Auto-notify: lance notify_hourly au premier accès de chaque heure UTC ────
+_notify_lock = threading.Lock()
+_last_notify_hour: datetime | None = None
+
+def _maybe_notify():
+    """Appelé à chaque requête. Lance notify_hourly.main() en background
+    si l'heure UTC a changé depuis le dernier appel. Idempotent grâce à
+    notification_log dans la DB."""
+    global _last_notify_hour
+    now_h = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    with _notify_lock:
+        if _last_notify_hour == now_h:
+            return
+        _last_notify_hour = now_h
+    def _run():
+        try:
+            import notify_hourly
+            notify_hourly.main()
+        except Exception as _e:
+            print(f"[auto-notify] {_e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+# ─── Utility ──────────────────────────────────────────────────────────────────
 
 def get_local_ip() -> str:
     """Return the machine's LAN IP (e.g. 192.168.x.x) for the share link."""
@@ -37,10 +62,52 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 COOKIE_SECRET = os.environ.get("TWELVE_COOKIE_SECRET", "twelve-dev-secret-change-in-prod-please")
 PORT = int(os.environ.get("PORT", 8888))
 MAX_PARTICIPANTS = 6
+VAPID_PUBLIC_KEY = "BLlM08OwpGSh3PfiBXwoJWR7QjyqXOp6ZwyNyqlgXCY7k8EmAuHuAh_atp7jvDJbEs3Y_7Xt1qX0frskgXSzfto"
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def compute_recap_unlock_utc_ms(challenge: dict, participants: list) -> int:
+    """Returns the UTC timestamp (ms) when the recap should unlock for all participants.
+    Uses the LATEST local midnight across all participant timezones (most-behind-UTC wins)."""
+    cdate = challenge["challenge_date"]
+    next_day = datetime.strptime(cdate, "%Y-%m-%d") + timedelta(days=1)
+    offsets = [p.get("utc_offset_minutes") or 0 for p in participants]
+    if not offsets:
+        offsets = [challenge.get("utc_offset_minutes") or 0]
+    min_offset = min(offsets)  # smallest = most behind UTC = latest midnight in UTC
+    # Local midnight in UTC: next_day 00:00 local = next_day 00:00 UTC - offset_min
+    recap_dt = next_day - timedelta(minutes=min_offset)
+    return int(recap_dt.timestamp() * 1000)
+
+
+def all_slots_filled(participants: list, contributions: list) -> bool:
+    """True if every participant has a contribution (photo or missed) for every slot."""
+    if not participants:
+        return False
+    n = len(db.SLOT_HOURS)
+    keys = {(c["participant_id"], c["slot_index"]) for c in contributions}
+    return all(
+        all((p["id"], i) in keys for i in range(n))
+        for p in participants
+    )
+
+
+def get_waiting_names(participants: list, contributions: list) -> list:
+    """Names of participants who haven't filled all their slots yet."""
+    n = len(db.SLOT_HOURS)
+    keys = {(c["participant_id"], c["slot_index"]) for c in contributions}
+    return [
+        p["name"] for p in participants
+        if sum(1 for i in range(n) if (p["id"], i) in keys) < n
+    ]
+
 
 # ─── Base Handler ─────────────────────────────────────────────────────────────
 
 class BaseHandler(tornado.web.RequestHandler):
+    def prepare(self):
+        _maybe_notify()
+
     def get_current_participant_id(self, challenge_id: str) -> str | None:
         raw = self.get_secure_cookie("twelve_ids")
         if not raw:
@@ -103,7 +170,12 @@ class HomeHandler(BaseHandler):
                 pass
         # Trier par date de création décroissante
         my_challenges.sort(key=lambda c: c.get("created_at", ""), reverse=True)
-        self.render("home.html", error=None, my_challenges=my_challenges)
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        active_challenges = [c for c in my_challenges if c.get("challenge_date", "") >= today]
+        past_challenges   = [c for c in my_challenges if c.get("challenge_date", "") < today]
+        self.render("home.html", error=None, my_challenges=my_challenges,
+                    active_challenges=active_challenges, past_challenges=past_challenges)
 
     def post(self):
         name = self.get_argument("name", "").strip()
@@ -119,7 +191,11 @@ class HomeHandler(BaseHandler):
             datetime.strptime(client_date, "%Y-%m-%d")
         except (ValueError, AttributeError):
             client_date = None
-        challenge = db.create_challenge(name, challenge_date=client_date)
+        try:
+            utc_offset = int(self.get_argument("utc_offset_minutes", "0"))
+        except ValueError:
+            utc_offset = 0
+        challenge = db.create_challenge(name, challenge_date=client_date, utc_offset_minutes=utc_offset)
         self.redirect(f"/challenge/{challenge['id']}")
 
 
@@ -155,6 +231,10 @@ class ChallengeHandler(BaseHandler):
                 if c["participant_id"] == participant_id:
                     my_contribs[c["slot_index"]] = c
 
+        recap_unlock_utc_ms = compute_recap_unlock_utc_ms(challenge, participants)
+        filled = all_slots_filled(participants, contributions)
+        waiting_names = get_waiting_names(participants, contributions)
+
         self.render(
             "challenge.html",
             challenge=challenge,
@@ -167,6 +247,10 @@ class ChallengeHandler(BaseHandler):
             full=(len(participants) >= MAX_PARTICIPANTS and not participant),
             slot_hours=db.SLOT_HOURS,
             share_url=self.get_share_url(challenge_id),
+            vapid_public_key=VAPID_PUBLIC_KEY,
+            recap_unlock_utc_ms=recap_unlock_utc_ms,
+            all_filled=filled,
+            waiting_names=waiting_names,
         )
 
     def post(self, challenge_id: str):
@@ -185,6 +269,14 @@ class ChallengeHandler(BaseHandler):
 
         share_url = self.get_share_url(challenge_id)
 
+        # Capture participant's timezone offset
+        try:
+            join_utc_offset = int(self.get_argument("utc_offset_minutes", "0") or "0")
+        except (ValueError, TypeError):
+            join_utc_offset = 0
+
+        recap_ms = compute_recap_unlock_utc_ms(challenge, participants)
+
         if len(participants) >= MAX_PARTICIPANTS:
             contributions = db.get_contributions(challenge_id)
             slots = db.build_timeline(challenge, participants, contributions)
@@ -194,6 +286,9 @@ class ChallengeHandler(BaseHandler):
                 participant=None, slots=slots, next_slot=None,
                 my_contribs={}, error="Ce défi est complet (6 participants max).",
                 full=True, slot_hours=db.SLOT_HOURS, share_url=share_url,
+                vapid_public_key=VAPID_PUBLIC_KEY, recap_unlock_utc_ms=recap_ms,
+                all_filled=all_slots_filled(participants, contributions),
+                waiting_names=get_waiting_names(participants, contributions),
             )
             return
 
@@ -207,17 +302,21 @@ class ChallengeHandler(BaseHandler):
                 participant=None, slots=slots, next_slot=None,
                 my_contribs={}, error="Ton prénom est requis.",
                 full=False, slot_hours=db.SLOT_HOURS, share_url=share_url,
+                vapid_public_key=VAPID_PUBLIC_KEY, recap_unlock_utc_ms=recap_ms,
+                all_filled=all_slots_filled(participants, contributions),
+                waiting_names=get_waiting_names(participants, contributions),
             )
             return
 
         if len(name) > 30:
             name = name[:30]
 
-        new_participant = db.join_challenge(challenge_id, name)
+        new_participant = db.join_challenge(challenge_id, name, utc_offset_minutes=join_utc_offset)
         if not new_participant:
             return self.render_error(409, "Ce défi est déjà complet.")
 
         self.set_participant_id(challenge_id, new_participant["id"])
+
         self.redirect(f"/challenge/{challenge_id}")
 
 
@@ -292,6 +391,7 @@ class SlotHandler(BaseHandler):
         try:
             img_data = file_info["body"]
             img = Image.open(io.BytesIO(img_data))
+            img = ImageOps.exif_transpose(img)  # fix EXIF rotation before anything else
             img = img.convert("RGB")
 
             # Resize to max 1200px on longest side
@@ -357,31 +457,69 @@ class SummaryHandler(BaseHandler):
 
         participants = db.get_participants(challenge_id)
         contributions = db.get_contributions(challenge_id)
+
+        # Gate: recap only accessible when midnight passed AND all slots filled
+        unlock_ms = compute_recap_unlock_utc_ms(challenge, participants)
+        unlock_dt = datetime.utcfromtimestamp(unlock_ms / 1000)
+        if datetime.utcnow() < unlock_dt or not all_slots_filled(participants, contributions):
+            self.redirect(f"/challenge/{challenge_id}")
+            return
+
         slots = db.build_timeline(challenge, participants, contributions)
 
         participant_id = self.get_current_participant_id(challenge_id)
         participant = db.get_participant(participant_id) if participant_id else None
 
-        # Precompute slides: list of {slot, cells: [{participant, contribution|None}]}
+        # Precompute individual stories: one entry per (slot × participant)
+        import json as _json
         contribs_by_key = {
             (c["participant_id"], c["slot_index"]): c
             for c in contributions
         }
-        slides = []
+        stories = []
+        for slot in slots:
+            for p in participants:
+                c = contribs_by_key.get((p["id"], slot["index"]))
+                t = c["type"] if c else "empty"
+                if t == "empty":
+                    continue  # skip unsubmitted — keep only photo/missed
+                stories.append({
+                    "slot_label":    slot["label"],
+                    "slot_hour":     slot["hour"],
+                    "p_name":        p["name"],
+                    "type":          t,
+                    "photo_url":     (c.get("photo_url") or "") if c else "",
+                    "missed_emoji":  (c.get("missed_emoji") or "❓") if c else "❓",
+                    "missed_reason": (c.get("missed_reason") or "Manqué") if c else "Manqué",
+                })
+        stories_json = _json.dumps(stories, ensure_ascii=False).replace("</", "<\\/")
+
+        # Slot-by-slot data for the stories slideshow (all participants per slot)
+        slots_data = []
         for slot in slots:
             cells = []
             for p in participants:
                 c = contribs_by_key.get((p["id"], slot["index"]))
-                cells.append({"participant": p, "contribution": c})
-            slides.append({"slot": slot, "cells": cells})
+                cells.append({
+                    "p_name":        p["name"],
+                    "type":          (c["type"] if c else "empty"),
+                    "photo_url":     (c.get("photo_url") or "") if c else "",
+                    "missed_emoji":  (c.get("missed_emoji") or "❓") if c else "❓",
+                    "missed_reason": (c.get("missed_reason") or "Manqué") if c else "Manqué",
+                })
+            slots_data.append({"label": slot["label"], "hour": slot["hour"], "cells": cells})
+        slots_json = _json.dumps(slots_data, ensure_ascii=False).replace("</", "<\\/")
 
         self.render(
             "summary.html",
             challenge=challenge,
             participants=participants,
+            contributions=contributions,
             participant=participant,
             slots=slots,
-            slides=slides,
+            stories_json=stories_json,
+            slots_json=slots_json,
+            n_stories=len(stories),
             n_participants=len(participants),
         )
 
@@ -406,6 +544,38 @@ class RenameHandler(BaseHandler):
         else:
             self.set_status(400)
             self.write({"error": "invalid name"})
+
+
+# ─── Leave challenge ──────────────────────────────────────────────────────────
+
+class LeaveHandler(BaseHandler):
+    def post(self, challenge_id: str):
+        participant_id = self.get_current_participant_id(challenge_id)
+        if participant_id:
+            db.leave_challenge(challenge_id, participant_id)
+            # Remove from cookie
+            raw = self.get_secure_cookie("twelve_ids")
+            try:
+                mapping = json.loads(raw.decode()) if raw else {}
+            except Exception:
+                mapping = {}
+            mapping.pop(challenge_id, None)
+            self.set_secure_cookie("twelve_ids", json.dumps(mapping), expires_days=30)
+        self.redirect("/")
+
+
+# ─── Forget challenge (remove from home screen, keep participation in DB) ─────
+
+class ForgetHandler(BaseHandler):
+    def post(self, challenge_id: str):
+        raw = self.get_secure_cookie("twelve_ids")
+        try:
+            mapping = json.loads(raw.decode()) if raw else {}
+        except Exception:
+            mapping = {}
+        mapping.pop(challenge_id, None)
+        self.set_secure_cookie("twelve_ids", json.dumps(mapping), expires_days=30)
+        self.redirect("/")
 
 
 # ─── API: Data refresh (JSON) ─────────────────────────────────────────────────
@@ -571,7 +741,9 @@ class ApiContributeHandler(ApiBaseHandler):
                 return self.err(400, "photo file required")
             file_info = files[0]
             try:
-                img = Image.open(io.BytesIO(file_info["body"])).convert("RGB")
+                img = Image.open(io.BytesIO(file_info["body"]))
+                img = ImageOps.exif_transpose(img)
+                img = img.convert("RGB")
                 img.thumbnail((1200, 1200), Image.LANCZOS)
                 upload_dir = os.path.join(UPLOAD_DIR, challenge_id)
                 os.makedirs(upload_dir, exist_ok=True)
@@ -624,6 +796,148 @@ class ApiMissedOptionsHandler(ApiBaseHandler):
         self.write({"options": [{"label": l, "emoji": e} for l, e in db.MISSED_OPTIONS]})
 
 
+class DiagHandler(tornado.web.RequestHandler):
+    """GET /api/diag?key=... — server-side diagnostics (no CORS limits)."""
+    def get(self):
+        diag_key = os.environ.get("TWELVE_DIAG_KEY", "")
+        if not diag_key or self.get_argument("key", "") != diag_key:
+            self.set_status(403); self.finish("forbidden"); return
+        import urllib.request as _ur
+        import json as _j
+        TOKEN = os.environ.get("PA_API_TOKEN", "")
+        USER  = "FOOxS"
+        out   = {}
+        # PA scheduled tasks
+        try:
+            req = _ur.Request(f"https://www.pythonanywhere.com/api/v0/user/{USER}/schedule/",
+                              headers={"Authorization": f"Token {TOKEN}"})
+            out["schedule"] = _j.loads(_ur.urlopen(req, timeout=10).read())
+        except Exception as e:
+            out["schedule_error"] = str(e)
+        # Try to create hourly PA scheduled task if none exist
+        if out.get("schedule") == []:
+            try:
+                import urllib.parse as _up
+                data = _up.urlencode({
+                    "command": "python /home/FOOxS/twelve/notify_hourly.py",
+                    "hour": "*", "minute": "0",
+                }).encode()
+                req2 = _ur.Request(
+                    f"https://www.pythonanywhere.com/api/v0/user/{USER}/schedule/",
+                    data=data,
+                    headers={"Authorization": f"Token {TOKEN}",
+                             "Content-Type": "application/x-www-form-urlencoded"},
+                    method="POST"
+                )
+                resp2 = _ur.urlopen(req2, timeout=10)
+                out["schedule_created"] = _j.loads(resp2.read())
+            except _ur.HTTPError as e:
+                out["schedule_create_error"] = e.read().decode()
+            except Exception as e:
+                out["schedule_create_error"] = str(e)
+        # Push subscriptions count per active challenge
+        subs_summary = []
+        for c in db.get_all_active_challenges():
+            subs = db.get_push_subscriptions(c["id"])
+            subs_summary.append({"id": c["id"], "name": c["name"],
+                                  "date": c["challenge_date"], "subs": len(subs)})
+        out["challenges"] = subs_summary
+        self.set_header("Content-Type", "application/json")
+        self.write(_j.dumps(out, indent=2, ensure_ascii=False))
+
+
+class NotifyHandler(tornado.web.RequestHandler):
+    """GET /api/notify?key=$TWELVE_NOTIFY_KEY — called hourly by cron-job.org."""
+    def get(self):
+        key = self.get_argument("key", "")
+        if not os.environ.get("TWELVE_NOTIFY_KEY") or key != os.environ.get("TWELVE_NOTIFY_KEY"):
+            self.set_status(403)
+            self.finish("forbidden")
+            return
+        import io, sys
+        old_stdout = sys.stdout
+        sys.stdout = captured = io.StringIO()
+        try:
+            import notify_hourly
+            notify_hourly.main()
+            output = captured.getvalue()
+            self.set_header("Content-Type", "text/plain")
+            self.write(output if output else "ok (no output)")
+        except Exception:
+            output = captured.getvalue()
+            self.set_status(500)
+            self.set_header("Content-Type", "text/plain")
+            self.write(output + "\n" + traceback.format_exc())
+        finally:
+            sys.stdout = old_stdout
+
+
+class NotifyTestHandler(tornado.web.RequestHandler):
+    """GET /api/notify_test?key=... — force-sends a test push regardless of slot hours."""
+    def get(self):
+        key = self.get_argument("key", "")
+        if not os.environ.get("TWELVE_NOTIFY_KEY") or key != os.environ.get("TWELVE_NOTIFY_KEY"):
+            self.set_status(403)
+            self.finish("forbidden")
+            return
+        import io, sys
+        old_stdout = sys.stdout
+        sys.stdout = captured = io.StringIO()
+        try:
+            import notify_hourly
+            yesterday = (__import__('datetime').date.today() - __import__('datetime').timedelta(days=1)).isoformat()
+            challenges = db.get_all_active_challenges(from_date=yesterday)
+            total = 0
+            for challenge in challenges:
+                cid  = challenge["id"]
+                name = challenge["name"]
+                subs = db.get_push_subscriptions(cid)
+                if not subs:
+                    print(f"[test] {cid} ({name}): 0 sub(s), skip")
+                    continue
+                sent = notify_hourly.notify_challenge(
+                    cid,
+                    "🔔 Notification test",
+                    f"Test Twelve — les notifications fonctionnent pour « {name} » !",
+                )
+                print(f"[test] {cid} ({name}): {sent}/{len(subs)} sent")
+                total += sent
+            output = captured.getvalue()
+            self.set_header("Content-Type", "text/plain")
+            self.write(output + f"\nTotal: {total} notification(s) envoyée(s)")
+        except Exception:
+            output = captured.getvalue()
+            self.set_status(500)
+            self.set_header("Content-Type", "text/plain")
+            self.write(output + "\n" + traceback.format_exc())
+        finally:
+            sys.stdout = old_stdout
+
+
+class PushSubscribeHandler(BaseHandler):
+    """POST /challenge/<id>/push-subscribe  — saves push subscription for a challenge."""
+
+    def post(self, challenge_id: str):
+        challenge = db.get_challenge(challenge_id)
+        if not challenge:
+            self.set_status(404)
+            self.write({"error": "not found"})
+            return
+        participant_id = self.get_current_participant_id(challenge_id)
+        try:
+            sub_json = self.request.body.decode("utf-8")
+            db.save_push_subscription(challenge_id, participant_id, sub_json)
+            self.set_header("Content-Type", "application/json")
+            self.write({"ok": True})
+        except Exception as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+
+
+# ─── Startup (runs on import, so PythonAnywhere WSGI picks it up too) ────────
+db.init_db()
+db.migrate_db()
+
 # ─── Application ──────────────────────────────────────────────────────────────
 
 def make_app():
@@ -633,7 +947,10 @@ def make_app():
             (r"/challenge/([^/]+)", ChallengeHandler),
             (r"/challenge/([^/]+)/slot/(\d+)", SlotHandler),
             (r"/challenge/([^/]+)/rename", RenameHandler),
+            (r"/challenge/([^/]+)/leave", LeaveHandler),
+            (r"/challenge/([^/]+)/forget", ForgetHandler),
             (r"/challenge/([^/]+)/summary", SummaryHandler),
+            (r"/challenge/([^/]+)/push-subscribe", PushSubscribeHandler),
             # Legacy JSON endpoint (kept for web client)
             (r"/api/challenge/([^/]+)/data", ApiChallengeDataHandler),
             # iOS JSON API
@@ -643,8 +960,14 @@ def make_app():
             (r"/api/challenges/([^/]+)/slots/(\d+)/contribute", ApiContributeHandler),
             (r"/api/challenges/([^/]+)/rename", ApiRenameHandler),
             (r"/api/missed-options", ApiMissedOptionsHandler),
+            (r"/api/notify", NotifyHandler),
+            (r"/api/notify_test", NotifyTestHandler),
+            (r"/api/diag", DiagHandler),
             (r"/static/uploads/(.*)", tornado.web.StaticFileHandler, {
                 "path": UPLOAD_DIR,
+            }),
+            (r"/(sw\.js)", tornado.web.StaticFileHandler, {
+                "path": os.path.join(os.path.dirname(__file__), "static"),
             }),
             (r"/static/(.*)", tornado.web.StaticFileHandler, {
                 "path": os.path.join(os.path.dirname(__file__), "static"),
@@ -660,6 +983,7 @@ def make_app():
 
 if __name__ == "__main__":
     db.init_db()
+    db.migrate_db()
     app = make_app()
     app.listen(PORT, xheaders=True)
     print(f"✦ Twelve is running at http://localhost:{PORT}")

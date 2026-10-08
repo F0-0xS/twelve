@@ -112,7 +112,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 .missed-option {
   background: var(--bg3);
@@ -131,6 +131,67 @@
 .missed-option.selected { border-color: var(--accent); background: rgba(232,213,176,.07); }
 .missed-emoji { font-size: 1.6rem; }
 .missed-label { font-size: .82rem; font-weight: 600; color: var(--text); }
+
+/* Custom card form */
+.custom-card-form {
+  display: none;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-direction: column;
+}
+.custom-card-form.visible { display: flex; }
+.custom-card-row { display: flex; gap: 10px; align-items: flex-start; }
+.custom-emoji-input {
+  width: 56px; height: 56px;
+  font-size: 1.6rem; text-align: center;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.custom-emoji-input input {
+  width: 100%; height: 100%; text-align: center;
+  background: transparent; border: none; color: var(--text);
+  font-size: 1.6rem; outline: none;
+}
+.custom-reason-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.custom-reason-input {
+  width: 100%; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  padding: 10px 12px; font-size: .9rem; outline: none; resize: none;
+  transition: border-color .2s; line-height: 1.4;
+}
+.custom-reason-input:focus { border-color: var(--accent2); }
+.custom-char-count { font-size: .72rem; color: var(--muted); text-align: right; }
+.custom-char-count.warn { color: var(--danger); }
+.custom-preview {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg2); border-radius: 8px; padding: 12px;
+}
+.custom-preview-emoji { font-size: 2rem; }
+.custom-preview-text { font-size: .85rem; font-weight: 600; color: var(--text); }
+
+/* ── Participant status chips ── */
+.psc-list { display: flex; flex-direction: column; gap: 5px; }
+.psc-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; background: var(--bg3); border: 1px solid transparent; }
+.psc-avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: .67rem; font-weight: 700; color: var(--accent2); flex-shrink: 0; }
+.psc-name { flex: 1; font-size: .82rem; font-weight: 600; }
+.psc-badge { font-size: .8rem; }
+.psc-item.sent   { border-color: rgba(34,197,94,.15); }
+.psc-item.missed { border-color: rgba(239,68,68,.15); }
+.psc-item.sent   .psc-badge { color: var(--success); }
+.psc-item.missed .psc-badge { color: #ef4444; }
+.psc-item.waiting .psc-badge { color: var(--muted); opacity: .5; }
+
+/* ── Status-driven sections (shown/hidden by JS) ── */
+#statusUpcoming, #statusPast, #slotTabs { display: none; }
+#statusUpcoming.active { display: block; }
+#statusPast.active     { display: block; }
+#slotTabs.active       { display: flex; }
 
 /* ── My existing contribution ── */
 .existing-contrib {
@@ -197,22 +258,26 @@
     <p class="text-sm text-muted mt8">{{ challenge['name'] }} · {{ challenge['challenge_date'] }}</p>
   </div>
 
-  <!-- ── Contributions from others ── -->
-  {% if slot['contributions'] %}
-  <div class="section-title">Contributions</div>
-  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+  <!-- ── Participants status (privacy: no content before reveal) ── -->
+  {% if slot['contributions'] or (slot['missing_participants'] and slot['status'] != 'upcoming') %}
+  <div class="section-title">Participants</div>
+  <div class="psc-list" style="margin-bottom:20px;">
     {% for c in slot['contributions'] %}
-    {% set p_name = slot['participant_map'].get(c['participant_id'], {}).get('name', '?') %}
-    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-      {% if c['type'] == 'photo' %}
-        <img src="{{ c['photo_url'] }}" alt="{{ p_name }}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" loading="lazy"/>
-      {% else %}
-        <div style="width:80px;height:80px;background:#111;border:1px solid #222;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:1.6rem;">
-          <span>{{ c.get('missed_emoji','❓') }}</span>
-        </div>
+      {% set p_name = slot['participant_map'].get(c['participant_id'], {}).get('name', '?') %}
+      <div class="psc-item {% if c['type'] == 'photo' %}sent{% else %}missed{% end %}">
+        <div class="psc-avatar">{{ p_name[0].upper() }}</div>
+        <span class="psc-name">{{ p_name }}</span>
+        <span class="psc-badge">{% if c['type'] == 'photo' %}✓ envoyé{% else %}× absent{% end %}</span>
+      </div>
+    {% end %}
+    {% if slot['status'] in ('open', 'past') %}
+      {% for mp in slot['missing_participants'] %}
+      <div class="psc-item waiting">
+        <div class="psc-avatar">{{ mp['name'][0].upper() }}</div>
+        <span class="psc-name">{{ mp['name'] }}</span>
+        <span class="psc-badge">○ en attente</span>
+      </div>
       {% end %}
-      <span style="font-size:.7rem;color:var(--muted);">{{ p_name }}</span>
-    </div>
     {% end %}
   </div>
   {% end %}
@@ -220,23 +285,18 @@
   <!-- ── Add contribution ── -->
   <div class="section-title">Ta contribution</div>
 
-  {% if slot['status'] == 'upcoming' %}
-  <div style="background:#1a1a1a;border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;text-align:center;color:var(--muted);">
+  <!-- Status messages + tabs — shown/hidden by JS using browser timezone -->
+  <div id="statusUpcoming" style="background:#1a1a1a;border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;text-align:center;color:var(--muted);">
     ⏳ Ce créneau n'a pas encore commencé.
   </div>
-  {% elif slot['status'] == 'past' %}
-  <!-- Créneau passé : carte d'absence uniquement -->
-  {% elif slot['status'] == 'open' %}
-  <!-- Tabs (créneau ouvert seulement) -->
-  <div class="tabs">
+  <p id="statusPast" class="text-sm text-muted" style="margin-bottom:12px;">Ce créneau est terminé. Tu peux encore envoyer une carte d'absence.</p>
+  <div id="slotTabs" class="tabs">
     <button class="tab active" onclick="switchTab('photo', this)">📷 Photo</button>
     <button class="tab" onclick="switchTab('missed', this)">🃏 Carte manquée</button>
   </div>
-  {% end %}
 
-  <!-- ── PHOTO PANEL (créneau ouvert seulement) ── -->
-  {% if slot['status'] == 'open' %}
-  <div id="photoPanel" class="active">
+  <!-- ── PHOTO PANEL ── -->
+  <div id="photoPanel">
     <form method="POST" action="/challenge/{{ challenge['id'] }}/slot/{{ slot['index'] }}" enctype="multipart/form-data" id="photoForm">
       <input type="hidden" name="action" value="photo" />
 
@@ -253,7 +313,7 @@
         <!-- Placeholder (shown when nothing is happening) -->
         <div class="media-placeholder" id="mediaPlaceholder">
           <div class="media-icon">📷</div>
-          <div class="media-hint">Prends une photo ou importe depuis ton appareil</div>
+          <div class="media-hint">Appuie sur Caméra pour prendre ta photo</div>
         </div>
 
         <!-- Video controls (shown during camera use) -->
@@ -269,11 +329,8 @@
       </div>
 
       <div class="media-actions mt12">
-        <button type="button" class="btn btn-outline btn-full" id="cameraBtn" onclick="startCamera()">
-          📷 Caméra
-        </button>
         <button type="button" class="btn btn-outline btn-full" onclick="document.getElementById('fileInput').click()">
-          🗂 Importer
+          📷 Caméra
         </button>
       </div>
 
@@ -284,14 +341,8 @@
     </form>
   </div>
 
-  {% end %}
-
-  <!-- ── MISSED PANEL (créneau ouvert ou passé) ── -->
-  {% if slot['status'] in ('open', 'past') %}
-  {% if slot['status'] == 'past' %}
-  <p class="text-sm text-muted" style="margin-bottom:12px;">Ce créneau est terminé. Tu peux encore envoyer une carte d'absence.</p>
-  {% end %}
-  <div id="missedPanel" {% if slot['status'] == 'open' %}{% else %}class="active"{% end %}>
+  <!-- ── MISSED PANEL ── -->
+  <div id="missedPanel">
     <form method="POST" action="/challenge/{{ challenge['id'] }}/slot/{{ slot['index'] }}" id="missedForm">
       <input type="hidden" name="action" value="missed" />
       <input type="hidden" name="reason" id="missedReason" value="" />
@@ -304,6 +355,30 @@
           <span class="missed-label">{{ reason }}</span>
         </div>
         {% end %}
+        <div class="missed-option" id="customCardOption" onclick="selectCustomMissed(this)">
+          <span class="missed-emoji">✏️</span>
+          <span class="missed-label">Ma carte</span>
+        </div>
+      </div>
+
+      <!-- Custom card form (shown when "Ma carte" is selected) -->
+      <div class="custom-card-form" id="customCardForm">
+        <div class="custom-card-row">
+          <div class="custom-emoji-input" title="Tape un émoji">
+            <input type="text" id="customEmojiField" maxlength="4" placeholder="😊" oninput="updateCustomCard()" />
+          </div>
+          <div class="custom-reason-wrap">
+            <textarea class="custom-reason-input" id="customReasonField"
+              maxlength="50" rows="2"
+              placeholder="Ce que tu veux dire… (50 car. max)"
+              oninput="updateCustomCard()"></textarea>
+            <div class="custom-char-count" id="customCharCount">0/50</div>
+          </div>
+        </div>
+        <div class="custom-preview" id="customPreview" style="display:none;">
+          <span class="custom-preview-emoji" id="customPreviewEmoji">✏️</span>
+          <span class="custom-preview-text"  id="customPreviewText">–</span>
+        </div>
       </div>
 
       <button type="submit" class="btn btn-primary btn-full" id="missedSubmitBtn" disabled>
@@ -312,7 +387,6 @@
       </button>
     </form>
   </div>
-  {% end %}
 
 </div>
 {% end %}
@@ -333,9 +407,49 @@ function switchTab(name, btn) {
 function selectMissed(reason, emoji, el) {
   document.querySelectorAll('.missed-option').forEach(o => o.classList.remove('selected'));
   el.classList.add('selected');
+  document.getElementById('customCardForm').classList.remove('visible');
   document.getElementById('missedReason').value = reason;
   document.getElementById('missedEmoji').value = emoji;
   document.getElementById('missedSubmitBtn').disabled = false;
+}
+
+function selectCustomMissed(el) {
+  document.querySelectorAll('.missed-option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('customCardForm').classList.add('visible');
+  document.getElementById('missedSubmitBtn').disabled = true;
+  updateCustomCard();
+  // Focus the reason field
+  setTimeout(function() {
+    var r = document.getElementById('customReasonField');
+    if (r) r.focus();
+  }, 100);
+}
+
+function updateCustomCard() {
+  var emoji  = (document.getElementById('customEmojiField').value || '✏️').trim() || '✏️';
+  var reason = document.getElementById('customReasonField').value;
+  var len    = reason.length;
+
+  // Char count display
+  var counter = document.getElementById('customCharCount');
+  counter.textContent = len + '/50';
+  counter.className = 'custom-char-count' + (len >= 45 ? ' warn' : '');
+
+  // Preview
+  var prev = document.getElementById('customPreview');
+  if (reason.trim().length > 0) {
+    document.getElementById('customPreviewEmoji').textContent = emoji;
+    document.getElementById('customPreviewText').textContent  = reason;
+    prev.style.display = 'flex';
+  } else {
+    prev.style.display = 'none';
+  }
+
+  // Update hidden fields + submit button
+  document.getElementById('missedEmoji').value  = emoji;
+  document.getElementById('missedReason').value = reason;
+  document.getElementById('missedSubmitBtn').disabled = reason.trim().length < 2;
 }
 
 const missedForm = document.getElementById('missedForm');
@@ -466,4 +580,47 @@ document.getElementById('photoForm').addEventListener('submit', function(e) {
   document.getElementById('photoSpinner').style.display = 'block';
 });
 } // end if (fileInput)
+
+// ── Timezone-aware slot UI ─────────────────────────────────
+(function() {
+  const SLOT_HOUR = {{ slot['hour'] }};
+  const CHALLENGE_DATE = '{{ challenge["challenge_date"] }}';
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  function clientSlotStatus() {
+    const now  = new Date();
+    const open = new Date(CHALLENGE_DATE + 'T' + pad(SLOT_HOUR) + ':00:00');
+    const close = new Date(open.getTime() + 60 * 60 * 1000);
+    if (now < open)  return 'upcoming';
+    if (now < close) return 'open';
+    return 'past';
+  }
+
+  function initSlot() {
+    const status = clientSlotStatus();
+
+    // Update nav badge class
+    const badge = document.querySelector('.nav .badge');
+    if (badge) badge.className = 'badge badge-' + status;
+
+    if (status === 'upcoming') {
+      document.getElementById('statusUpcoming').classList.add('active');
+    } else if (status === 'past') {
+      document.getElementById('statusPast').classList.add('active');
+      document.getElementById('missedPanel').classList.add('active');
+    } else { // open
+      document.getElementById('slotTabs').classList.add('active');
+      document.getElementById('photoPanel').classList.add('active');
+      // missedPanel stays hidden until user clicks the tab
+    }
+  }
+
+  initSlot();
+})();
+
+{% if my_contribution %}
+// Photo submitted → clear badge
+if (navigator.clearAppBadge) navigator.clearAppBadge();
+{% end %}
 {% end %}

@@ -13,3 +13,7 @@ Twelve.xcodeproj/
 TwelveTests/
 TwelveUITests/
 start.sh
+
+# Secrets
+*.pem
+.env*
