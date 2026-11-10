@@ -106,7 +106,17 @@ def get_waiting_names(participants: list, contributions: list) -> list:
 
 class BaseHandler(tornado.web.RequestHandler):
     def prepare(self):
+        db._ctx.essai = self.get_cookie("twelve_essai") == "1"
         _maybe_notify()
+
+    def on_finish(self):
+        db._ctx.essai = False
+
+    def get_template_namespace(self):
+        ns = super().get_template_namespace()
+        ns["essai"] = self.get_cookie("twelve_essai") == "1"
+        ns["daily_color"] = db.daily_color
+        return ns
 
     def get_current_participant_id(self, challenge_id: str) -> str | None:
         raw = self.get_secure_cookie("twelve_ids")
@@ -195,8 +205,22 @@ class HomeHandler(BaseHandler):
             utc_offset = int(self.get_argument("utc_offset_minutes", "0"))
         except ValueError:
             utc_offset = 0
-        challenge = db.create_challenge(name, challenge_date=client_date, utc_offset_minutes=utc_offset)
+        mode = self.get_argument("mode", "libre")
+        challenge = db.create_challenge(name, challenge_date=client_date, utc_offset_minutes=utc_offset, mode=mode)
         self.redirect(f"/challenge/{challenge['id']}")
+
+
+class EssaiHandler(BaseHandler):
+    """GET /essai?on=1|0&next=/chemin : active le mode essai (tous les créneaux ouverts) pour ce téléphone."""
+    def get(self):
+        if self.get_argument("on", "1") == "1":
+            self.set_cookie("twelve_essai", "1", expires_days=1)
+        else:
+            self.clear_cookie("twelve_essai")
+        nxt = self.get_argument("next", "/")
+        if not nxt.startswith("/") or nxt.startswith("//"):
+            nxt = "/"
+        self.redirect(nxt)
 
 
 # ─── Challenge ────────────────────────────────────────────────────────────────
@@ -944,6 +968,7 @@ def make_app():
     return tornado.web.Application(
         [
             (r"/", HomeHandler),
+            (r"/essai", EssaiHandler),
             (r"/challenge/([^/]+)", ChallengeHandler),
             (r"/challenge/([^/]+)/slot/(\d+)", SlotHandler),
             (r"/challenge/([^/]+)/rename", RenameHandler),

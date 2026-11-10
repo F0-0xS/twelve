@@ -269,6 +269,14 @@
     <p class="text-sm text-muted mt8">Défi du {{ challenge['challenge_date'] }}</p>
   </div>
 
+  {% set _c = daily_color(challenge) %}
+  {% if _c %}
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:12px;border:1px solid var(--border,#333);border-radius:12px;">
+    <div style="width:52px;height:52px;border-radius:10px;background:{{ _c['hex'] }};border:1px solid rgba(255,255,255,.2);flex:none;"></div>
+    <div><div class="text-sm text-muted">Couleur du jour</div><div style="font-size:1.3rem;font-weight:800;">{{ _c['name'] }}</div></div>
+  </div>
+  {% end %}
+  <div class="text-sm text-muted" style="margin-bottom:12px;">{% if essai %}🧪 Mode essai : tous les créneaux sont ouverts. <a href="/essai?on=0&next=/challenge/{{ challenge['id'] }}">Désactiver</a>{% else %}<a href="/essai?on=1&next=/challenge/{{ challenge['id'] }}" style="color:inherit;opacity:.6;">Mode essai</a>{% end %}</div>
   <!-- Error -->
   {% if error %}
   <div class="alert alert-error mt12" style="margin-bottom:16px;">{{ error }}</div>
@@ -553,7 +561,9 @@
     return { open, close };
   }
 
+  const ESSAI = {{ 'true' if essai else 'false' }};
   function getStatus(hour) {
+    if (ESSAI) return 'open';
     const now = new Date();
     const { open, close } = slotTimes(hour);
     if (now < open)  return 'upcoming';

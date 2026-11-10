@@ -178,6 +178,15 @@
           <button type="button" class="toggle-btn active" id="tomorrowBtn" onclick="setStartDate('tomorrow')">🌅 Demain</button>
         </div>
       </div>
+      <div class="input-group mt16">
+        <label class="label">Mode</label>
+        <input type="hidden" name="mode" id="modeInput" value="libre" />
+        <div class="start-toggle">
+          <button type="button" class="toggle-btn active" id="modeLibreBtn" onclick="setMode('libre')">✏️ Libre</button>
+          <button type="button" class="toggle-btn" id="modeCouleurBtn" onclick="setMode('couleur')">🎨 Couleur</button>
+        </div>
+        <p class="text-sm text-muted mt8" id="modeHelp">Photos libres toute la journée.</p>
+      </div>
       <button type="submit" class="btn btn-primary btn-full mt16" id="createBtn">
         <span class="spinner" id="createSpinner"></span>
         Créer le défi →
@@ -267,6 +276,15 @@ function joinViaLink() {
   } else {
     alert('Lien invalide.\nColle le lien complet du défi (ex: https://fooxs.pythonanywhere.com/challenge/abc12345)');
   }
+}
+
+function setMode(m) {
+  document.getElementById('modeInput').value = m;
+  document.getElementById('modeLibreBtn').classList.toggle('active', m === 'libre');
+  document.getElementById('modeCouleurBtn').classList.toggle('active', m === 'couleur');
+  document.getElementById('modeHelp').textContent = m === 'couleur'
+    ? 'Chaque jour, une couleur à trouver autour de toi.'
+    : 'Photos libres toute la journée.';
 }
 
 function setStartDate(when) {

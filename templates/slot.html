@@ -258,6 +258,14 @@
     <p class="text-sm text-muted mt8">{{ challenge['name'] }} · {{ challenge['challenge_date'] }}</p>
   </div>
 
+  {% set _c = daily_color(challenge) %}
+  {% if _c %}
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <div style="width:40px;height:40px;border-radius:9px;background:{{ _c['hex'] }};border:1px solid rgba(255,255,255,.2);"></div>
+    <div><div class="text-sm text-muted">Couleur du jour</div><strong>{{ _c['name'] }}</strong></div>
+  </div>
+  {% end %}
+
   <!-- ── Participants status (privacy: no content before reveal) ── -->
   {% if slot['contributions'] or (slot['missing_participants'] and slot['status'] != 'upcoming') %}
   <div class="section-title">Participants</div>
@@ -588,7 +596,9 @@ document.getElementById('photoForm').addEventListener('submit', function(e) {
 
   function pad(n) { return String(n).padStart(2,'0'); }
 
+  const ESSAI = {{ 'true' if essai else 'false' }};
   function clientSlotStatus() {
+    if (ESSAI) return 'open';
     const now  = new Date();
     const open = new Date(CHALLENGE_DATE + 'T' + pad(SLOT_HOUR) + ':00:00');
     const close = new Date(open.getTime() + 60 * 60 * 1000);

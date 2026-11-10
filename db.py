@@ -5,12 +5,29 @@ from __future__ import annotations
 import sqlite3
 import uuid
 import os
+import threading
 from datetime import datetime, timedelta, date
 
 DB_PATH = os.environ.get(
     "TWELVE_DB_PATH",
     os.path.join(os.path.dirname(__file__), "twelve.db"),
 )
+
+_ctx = threading.local()  # mode essai, par requête
+
+COLORS = [("Rouge", "#D7263D"), ("Orange", "#F28C28"), ("Jaune", "#F5C400"), ("Vert", "#2E9E4F"), ("Turquoise", "#12A5A0"), ("Bleu", "#2563EB"), ("Violet", "#7B3FBF"), ("Rose", "#E85AA1"), ("Marron", "#8B5A2B"), ("Blanc", "#F4F4F4"), ("Noir", "#1A1A1A"), ("Gris", "#8A8F98")]
+
+
+def daily_color(challenge: dict):
+    """Couleur du jour pour un défi en mode Couleur, sinon None."""
+    if (challenge.get("mode") or "libre") != "couleur":
+        return None
+    h = 0
+    for ch in challenge["id"] + challenge["challenge_date"]:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+    name, hexa = COLORS[h % len(COLORS)]
+    return {"name": name, "hex": hexa}
+
 
 SLOT_HOURS = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]  # 12 créneaux toutes les 2h
 
@@ -79,7 +96,9 @@ def init_db():
 
 # ─── Challenges ──────────────────────────────────────────────────────────────
 
-def create_challenge(name: str, challenge_date: str | None = None, utc_offset_minutes: int = 0) -> dict:
+def create_challenge(name: str, challenge_date: str | None = None, utc_offset_minutes: int = 0, mode: str = "libre") -> dict:
+    if mode not in ("libre", "couleur"):
+        mode = "libre"
     cid = uuid.uuid4().hex[:8]
     now = datetime.utcnow().isoformat()
     # Prefer the client-supplied local date; fall back to server date
@@ -87,8 +106,8 @@ def create_challenge(name: str, challenge_date: str | None = None, utc_offset_mi
         challenge_date = date.today().isoformat()
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO challenges (id, name, created_at, challenge_date, utc_offset_minutes) VALUES (?,?,?,?,?)",
-            (cid, name, now, challenge_date, utc_offset_minutes),
+            "INSERT INTO challenges (id, name, created_at, challenge_date, utc_offset_minutes, mode) VALUES (?,?,?,?,?,?)",
+            (cid, name, now, challenge_date, utc_offset_minutes, mode),
         )
     return get_challenge(cid)
 
@@ -250,10 +269,12 @@ def slot_datetime(challenge_date: str, slot_index: int) -> datetime:
     return d.replace(hour=SLOT_HOURS[slot_index], minute=0, second=0, microsecond=0)
 
 
-def get_slot_status(slot_index: int, challenge_date: str) -> str:
-    """Returns: upcoming | open | past"""
+def get_slot_status(slot_index: int, challenge_date: str, utc_offset_minutes: int = 0) -> str:
+    """Returns: upcoming | open | past (heure locale du défi ; mode essai = tout ouvert)"""
+    if getattr(_ctx, "essai", False):
+        return "open"
     slot_dt = slot_datetime(challenge_date, slot_index)
-    now = datetime.now()
+    now = datetime.utcnow() + timedelta(minutes=utc_offset_minutes or 0)
     if now < slot_dt:
         return "upcoming"
     if now < slot_dt + timedelta(minutes=60):
@@ -288,6 +309,9 @@ def migrate_db():
         cols = [r[1] for r in conn.execute("PRAGMA table_info(challenges)").fetchall()]
         if 'utc_offset_minutes' not in cols:
             conn.execute("ALTER TABLE challenges ADD COLUMN utc_offset_minutes INTEGER DEFAULT 0")
+
+        if 'mode' not in cols:
+            conn.execute("ALTER TABLE challenges ADD COLUMN mode TEXT DEFAULT 'libre'")
 
         # Add utc_offset_minutes to participants if missing
         pcols = [r[1] for r in conn.execute("PRAGMA table_info(participants)").fetchall()]
@@ -364,7 +388,7 @@ def build_timeline(challenge: dict, participants: list[dict], contributions: lis
 
     slots = []
     for i in range(n):
-        status = get_slot_status(i, challenge["challenge_date"])
+        status = get_slot_status(i, challenge["challenge_date"], challenge.get("utc_offset_minutes") or 0)
         slot_contribs = contribs_by_slot[i]
 
         # Figure out who contributed and who hasn't
