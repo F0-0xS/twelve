@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Mon tableau – {{ challenge['name'] }}{% end %}
+{% block extra_styles %}
+.gr-top{display:flex;align-items:center;gap:12px;padding:14px 16px 10px}
+.gr-top a{color:var(--muted);text-decoration:none;font-size:1.3rem}
+.gr-sw{width:34px;height:34px;border-radius:8px;flex:none;border:1px solid rgba(255,255,255,.2)}
+.gr-top b{display:block;font-size:1.1rem}
+.gr-top small{color:var(--muted)}
+.gr{display:grid;grid-template-columns:repeat(3,1fr);gap:0;max-width:480px;margin:0 auto}
+.gr button{all:unset;position:relative;aspect-ratio:3/4;background:var(--bg3);cursor:pointer;overflow:hidden;display:block}
+.gr img{width:100%;height:100%;object-fit:cover;display:block}
+.gr button.sel::after{content:"";position:absolute;inset:0;background:rgba(255,255,255,.15);box-shadow:inset 0 0 0 3px #fff}
+.gr .vide{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem}
+.gr-bar{display:flex;gap:8px;padding:12px 16px;flex-wrap:wrap;max-width:480px;margin:0 auto}
+.gr-bar button,.gr-bar label{font:inherit;font-size:.9rem;border:1px solid var(--border);background:var(--bg2);color:var(--text);border-radius:99px;padding:9px 14px;cursor:pointer}
+.gr-bar button:disabled{opacity:.4}
+.gr-tip{color:var(--muted);font-size:.85rem;padding:0 16px;max-width:480px;margin:0 auto;min-height:2.6em}
+.gr-pl{max-width:480px;margin:0 auto;padding:6px 16px 32px}
+.gr-pl h3{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-weight:600}
+.gr-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+.gr-strip button{all:unset;position:relative;aspect-ratio:3/4;border-radius:6px;overflow:hidden;cursor:pointer;background:var(--bg3)}
+.gr-strip img{width:100%;height:100%;object-fit:cover;display:block}
+.gr-strip .in{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:flex-end;padding:3px 5px;font-size:.7rem;color:#fff}
+.gr-strip .lb{position:absolute;left:4px;top:3px;font-size:.62rem;color:#fff;text-shadow:0 0 3px #000}
+.gr-msg{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:99px;font-size:.9rem;z-index:9}
+{% end %}
+{% block body %}
+{% set _c = daily_color(challenge) %}
+<div class="gr-top">
+  <a href="/challenge/{{ challenge['id'] }}" aria-label="Retour">←</a>
+  {% if _c %}<div class="gr-sw" style="background:{{ _c['hex'] }}"></div>{% end %}
+  <div><b>Mon tableau{% if _c %} · {{ _c['name'] }}{% end %}</b><small>{{ challenge['name'] }}</small></div>
+</div>
+<div class="gr" id="grid"></div>
+<div class="gr-bar">
+  <label id="addLbl">📷 Ajouter une photo<input type="file" id="addIn" accept="image/*" hidden></label>
+  <button type="button" id="undo">↶ Annuler</button>
+</div>
+<p class="gr-tip" id="tip"></p>
+<div class="gr-pl"><h3>Ma pellicule · <span id="nb">0</span> photo(s), rien n'est perdu</h3><div class="gr-strip" id="strip"></div></div>
+<div class="gr-msg" id="msg" hidden></div>
+{% end %}
+{% block extra_scripts %}
+(function(){
+  let S = {% raw state %};
+  let sel = null, busy = false;
+  const $ = id => document.getElementById(id);
+  const url = id => (S.pellicule.find(p => p.id === id) || {}).url;
+  function toast(t){const m=$('msg');m.textContent=t;m.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>m.hidden=true,2500);}
+  function render(){
+    $('grid').innerHTML = S.cells.map((c,i)=>`<button type="button" data-cell="${i}" class="${sel===i?'sel':''}" aria-label="Case ${i+1}">${c&&url(c)?`<img src="${url(c)}" alt="">`:'<span class="vide">vide</span>'}</button>`).join('');
+    $('strip').innerHTML = S.pellicule.map(p=>{const k=S.cells.indexOf(p.id);return `<button type="button" data-photo="${p.id}" aria-label="Photo ${p.label}"><img src="${p.url}" alt=""><span class="lb">${p.label}</span>${k>=0?`<span class="in">case ${k+1}</span>`:''}</button>`;}).join('');
+    $('nb').textContent = S.pellicule.length;
+    $('undo').disabled = !S.can_undo || S.locked;
+    $('addLbl').style.display = S.locked ? 'none' : '';
+    $('tip').textContent = S.locked ? 'Le défi est terminé : ton tableau est figé.'
+      : sel===null ? 'Touche une case pour la choisir.'
+      : 'Touche une autre case pour les échanger, ou une photo de la pellicule pour la mettre dans cette case.';
+  }
+  async function send(fd){
+    if(busy) return; busy=true;
+    try{const r=await fetch(location.pathname,{method:'POST',body:fd,credentials:'same-origin'});const j=await r.json();
+      if(j.cells) S=j; if(j.error) toast(j.error);}
+    catch(e){toast('Pas de connexion, réessaie.');}
+    busy=false; render();
+  }
+  const fd=o=>{const f=new FormData();Object.entries(o).forEach(([k,v])=>f.append(k,v));return f;};
+  $('grid').addEventListener('click',e=>{const b=e.target.closest('[data-cell]');if(!b||S.locked)return;const i=+b.dataset.cell;
+    if(sel===null){sel=i;render();return;}
+    if(sel===i){sel=null;render();return;}
+    const a=sel;sel=null;send(fd({action:'swap',a,b:i}));});
+  $('strip').addEventListener('click',e=>{const b=e.target.closest('[data-photo]');if(!b||S.locked)return;
+    if(sel===null){toast('Choisis d’abord une case de la grille.');return;}
+    const k=sel;sel=null;send(fd({action:'set',cell:k,photo:b.dataset.photo}));});
+  $('undo').addEventListener('click',()=>{sel=null;send(fd({action:'undo'}));});
+  $('addIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
+    const d=fd({action:'add'});d.append('photo',f);if(sel!==null)d.append('cell',sel);sel=null;toast('Envoi de la photo…');send(d);e.target.value='';});
+  render();
+})();
+{% end %}

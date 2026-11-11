@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Les tableaux – {{ challenge['name'] }}{% end %}
+{% block extra_styles %}
+.tb-top{display:flex;align-items:center;gap:12px;padding:14px 16px}
+.tb-top a{color:var(--muted);text-decoration:none;font-size:1.3rem}
+.tb-top b{display:block;font-size:1.15rem}.tb-top small{color:var(--muted)}
+.tb-list{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:0 16px 32px;max-width:640px;margin:0 auto}
+.tb-card{all:unset;cursor:pointer;display:block}
+.tb-card span{display:block;font-size:.9rem;padding:6px 2px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:0;background:var(--bg3)}
+.g3 div{aspect-ratio:9/16;background:var(--bg3) center/cover no-repeat}
+.tb-full[hidden]{display:none}
+.tb-full{position:fixed;inset:0;background:#000;z-index:20;display:flex;flex-direction:column}
+.tb-full .g3{flex:1;grid-template-rows:repeat(3,1fr)}
+.tb-full .g3 div{aspect-ratio:auto}
+.tb-bar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px calc(14px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff}
+.tb-bar button{white-space:nowrap;font:inherit;font-size:.9rem;border:0;border-radius:99px;padding:8px 14px;background:rgba(255,255,255,.9);color:#111;cursor:pointer}
+.tb-x{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.9);font-size:1.1rem;cursor:pointer}
+{% end %}
+{% block body %}
+{% set _c = daily_color(challenge) %}
+<div class="tb-top"><a href="/challenge/{{ challenge['id'] }}" aria-label="Retour">←</a>
+  <div><b>Les tableaux{% if _c %} · {{ _c['name'] }}{% end %}</b><small>{{ challenge['name'] }} · touche un tableau pour l'ouvrir en grand</small></div></div>
+<div class="tb-list" id="list"></div>
+<div class="tb-full" id="full" hidden>
+  <div class="g3" id="fg"></div>
+  <button class="tb-x" id="fx" aria-label="Fermer">✕</button>
+  <div class="tb-bar"><span id="fn"></span><span style="display:flex;gap:8px"><button id="fs">Enregistrer l'image</button><button id="fnext">Suivant →</button></span></div>
+</div>
+{% end %}
+{% block extra_scripts %}
+(function(){
+  const B = {% raw boards %};
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const cells = b => b.cells.map(u => `<div style="${u?`background-image:url('${u}')`:''}"></div>`).join('');
+  $('list').innerHTML = B.map((b,i)=>`<button class="tb-card" data-i="${i}"><div class="g3">${cells(b)}</div><span>${esc(b.name)}</span></button>`).join('') || '<p style="color:var(--muted)">Personne n’a encore de tableau.</p>';
+  let cur = 0;
+  function open(i){cur=i;const b=B[i];$('fg').innerHTML=cells(b);$('fn').textContent=b.name+' · '+(i+1)+'/'+B.length;$('full').hidden=false;}
+  $('list').addEventListener('click',e=>{const c=e.target.closest('[data-i]');if(c)open(+c.dataset.i);});
+  $('fx').onclick=()=>$('full').hidden=true;
+  $('fnext').onclick=()=>open((cur+1)%B.length);
+  $('fs').onclick=async()=>{
+    const b=B[cur], W=1080, H=1920, cw=W/3, ch=H/3;
+    const cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');x.fillStyle='#000';x.fillRect(0,0,W,H);
+    await Promise.all(b.cells.map((u,i)=>!u?null:new Promise(res=>{const im=new Image();im.onload=()=>{const r=Math.max(cw/im.width,ch/im.height),w=im.width*r,h=im.height*r;
+      x.save();x.beginPath();x.rect((i%3)*cw,Math.floor(i/3)*ch,cw,ch);x.clip();x.drawImage(im,(i%3)*cw+(cw-w)/2,Math.floor(i/3)*ch+(ch-h)/2,w,h);x.restore();res();};im.onerror=res;im.src=u;})));
+    cv.toBlob(async blob=>{const f=new File([blob],'tableau-'+b.name+'.jpg',{type:'image/jpeg'});
+      try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return;}}catch(e){if(e&&e.name==='AbortError')return;}
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=f.name;document.body.appendChild(a);a.click();a.remove();},'image/jpeg',.9);
+  };
+})();
+{% end %}

@@ -223,6 +223,116 @@ class EssaiHandler(BaseHandler):
         self.redirect(nxt)
 
 
+# ─── Mode Couleur : ma grille + les tableaux ─────────────────────────────────
+
+def _save_upload(challenge_id: str, body: bytes) -> str:
+    img = Image.open(io.BytesIO(body))
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    img.thumbnail((1200, 1200), Image.LANCZOS)
+    d = os.path.join(UPLOAD_DIR, challenge_id)
+    os.makedirs(d, exist_ok=True)
+    fname = f"{uuid.uuid4().hex}.jpg"
+    img.save(os.path.join(d, fname), "JPEG", quality=82, optimize=True)
+    return f"/static/uploads/{challenge_id}/{fname}"
+
+
+def _recap_open(handler, challenge) -> bool:
+    if handler.get_cookie("twelve_essai") == "1":
+        return True
+    participants = db.get_participants(challenge["id"])
+    return datetime.utcnow().timestamp() * 1000 >= compute_recap_unlock_utc_ms(challenge, participants)
+
+
+class GrilleHandler(BaseHandler):
+    """GET/POST /challenge/<id>/grille — le tableau 3×3 d'un joueur (mode Couleur)."""
+    def _load(self, challenge_id):
+        challenge = db.get_challenge(challenge_id)
+        if not challenge:
+            self.render_error(404, "Ce défi n'existe pas.")
+            return None, None
+        pid = self.get_current_participant_id(challenge_id)
+        participant = db.get_participant(pid) if pid else None
+        if (challenge.get("mode") or "libre") != "couleur" or not participant or participant.get("challenge_id") != challenge_id:
+            self.redirect(f"/challenge/{challenge_id}")
+            return None, None
+        return challenge, participant
+
+    def _state(self, challenge, participant):
+        g = db.get_grid(challenge["id"], participant["id"])
+        locked = _recap_open(self, challenge) and self.get_cookie("twelve_essai") != "1"
+        return {"cells": g["cells"], "can_undo": g["can_undo"], "pellicule": g["pellicule"], "locked": locked}
+
+    def get(self, challenge_id):
+        challenge, participant = self._load(challenge_id)
+        if not challenge:
+            return
+        self.render("grille.html", challenge=challenge, participant=participant,
+                    state=json.dumps(self._state(challenge, participant)))
+
+    def post(self, challenge_id):
+        challenge, participant = self._load(challenge_id)
+        if not challenge:
+            return
+        st = self._state(challenge, participant)
+        if st["locked"]:
+            self.set_status(403)
+            return self.write({"error": "Le défi est terminé : ton tableau est figé.", **st})
+        cid, pid = challenge["id"], participant["id"]
+        action = self.get_argument("action", "")
+        cells = list(st["cells"])
+        ids = {p["id"] for p in st["pellicule"]}
+        try:
+            if action == "swap":
+                a, b = int(self.get_argument("a")), int(self.get_argument("b"))
+                assert 0 <= a < 9 and 0 <= b < 9 and a != b
+                cells[a], cells[b] = cells[b], cells[a]
+                db.save_grid(cid, pid, cells)
+            elif action == "set":
+                k, photo = int(self.get_argument("cell")), self.get_argument("photo")
+                assert 0 <= k < 9 and photo in ids
+                if photo in cells:  # déjà dans la grille : on échange les deux cases
+                    j = cells.index(photo)
+                    cells[j] = cells[k]
+                cells[k] = photo
+                db.save_grid(cid, pid, cells)
+            elif action == "undo":
+                db.undo_grid(cid, pid)
+            elif action == "add":
+                files = self.request.files.get("photo")
+                assert files
+                url = _save_upload(cid, files[0]["body"])
+                new_id = db.add_color_extra(cid, pid, url)
+                k = self.get_argument("cell", "")
+                if k.isdigit() and 0 <= int(k) < 9:
+                    db.save_grid(cid, pid, cells)  # garde l'état avant, pour pouvoir annuler
+                    cells = db.get_grid(cid, pid)["cells"]
+                    cells[int(k)] = new_id
+                    db.save_grid(cid, pid, cells, push_history=False)
+            else:
+                raise AssertionError
+        except Exception:
+            self.set_status(400)
+            return self.write({"error": "Action impossible, réessaie.", **self._state(challenge, participant)})
+        self.write(self._state(challenge, participant))
+
+
+class TableauxHandler(BaseHandler):
+    """GET /challenge/<id>/tableaux — le tableau final de chacun (après minuit)."""
+    def get(self, challenge_id):
+        challenge = db.get_challenge(challenge_id)
+        if not challenge:
+            return self.render_error(404, "Ce défi n'existe pas.")
+        if (challenge.get("mode") or "libre") != "couleur" or not _recap_open(self, challenge):
+            return self.redirect(f"/challenge/{challenge_id}")
+        boards = []
+        for p in db.get_participants(challenge_id):
+            g = db.get_grid(challenge_id, p["id"])
+            urls = {x["id"]: x["url"] for x in g["pellicule"]}
+            boards.append({"name": p["name"], "cells": [urls.get(c) if c else None for c in g["cells"]]})
+        pid = self.get_current_participant_id(challenge_id)
+        self.render("tableaux.html", challenge=challenge, boards=json.dumps(boards), me=pid)
+
+
 # ─── Challenge ────────────────────────────────────────────────────────────────
 
 class ChallengeHandler(BaseHandler):
@@ -961,6 +1071,7 @@ class PushSubscribeHandler(BaseHandler):
 # ─── Startup (runs on import, so PythonAnywhere WSGI picks it up too) ────────
 db.init_db()
 db.migrate_db()
+db.init_color_tables()
 
 # ─── Application ──────────────────────────────────────────────────────────────
 
@@ -975,6 +1086,8 @@ def make_app():
             (r"/challenge/([^/]+)/leave", LeaveHandler),
             (r"/challenge/([^/]+)/forget", ForgetHandler),
             (r"/challenge/([^/]+)/summary", SummaryHandler),
+            (r"/challenge/([^/]+)/grille", GrilleHandler),
+            (r"/challenge/([^/]+)/tableaux", TableauxHandler),
             (r"/challenge/([^/]+)/push-subscribe", PushSubscribeHandler),
             # Legacy JSON endpoint (kept for web client)
             (r"/api/challenge/([^/]+)/data", ApiChallengeDataHandler),
@@ -1009,6 +1122,7 @@ def make_app():
 if __name__ == "__main__":
     db.init_db()
     db.migrate_db()
+    db.init_color_tables()
     app = make_app()
     app.listen(PORT, xheaders=True)
     print(f"✦ Twelve is running at http://localhost:{PORT}")

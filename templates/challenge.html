@@ -276,6 +276,12 @@
     <div><div class="text-sm text-muted">Couleur du jour</div><div style="font-size:1.3rem;font-weight:800;">{{ _c['name'] }}</div></div>
   </div>
   {% end %}
+  {% if _c and participant %}
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+    <a href="/challenge/{{ challenge['id'] }}/grille" class="btn btn-primary">🖼️ Mon tableau</a>
+    <a href="/challenge/{{ challenge['id'] }}/tableaux" class="btn btn-outline">Les tableaux de tous (à minuit)</a>
+  </div>
+  {% end %}
   <div class="text-sm text-muted" style="margin-bottom:12px;">{% if essai %}🧪 Mode essai : tous les créneaux sont ouverts. <a href="/essai?on=0&next=/challenge/{{ challenge['id'] }}">Désactiver</a>{% else %}<a href="/essai?on=1&next=/challenge/{{ challenge['id'] }}" style="color:inherit;opacity:.6;">Mode essai</a>{% end %}</div>
   <!-- Error -->
   {% if error %}

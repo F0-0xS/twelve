@@ -405,3 +405,112 @@ def build_timeline(challenge: dict, participants: list[dict], contributions: lis
             "participant_map": participant_map,
         })
     return slots
+
+
+# ─── Mode Couleur : pellicule + grille 3×3 (« tableau ») ─────────────────────
+
+import json as _json
+
+
+def init_color_tables():
+    with get_db() as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS color_extras (
+            id TEXT PRIMARY KEY,
+            challenge_id TEXT NOT NULL,
+            participant_id TEXT NOT NULL,
+            photo_url TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS color_grids (
+            challenge_id TEXT NOT NULL,
+            participant_id TEXT NOT NULL,
+            cells TEXT NOT NULL,
+            history TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (challenge_id, participant_id)
+        );
+        """)
+
+
+def add_color_extra(challenge_id: str, participant_id: str, photo_url: str) -> str:
+    xid = uuid.uuid4().hex
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO color_extras (id, challenge_id, participant_id, photo_url, created_at) VALUES (?,?,?,?,?)",
+            (xid, challenge_id, participant_id, photo_url, datetime.utcnow().isoformat()),
+        )
+    return "x:" + xid
+
+
+def get_pellicule(challenge_id: str, participant_id: str) -> list[dict]:
+    """Toutes les photos du jour d'un joueur : créneaux + photos en plus. [{id, url, label}]"""
+    out = []
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, slot_index, photo_url FROM contributions WHERE challenge_id=? AND participant_id=? AND type='photo' ORDER BY slot_index",
+            (challenge_id, participant_id),
+        ).fetchall()
+        for r in rows:
+            out.append({"id": "c:" + r["id"], "url": r["photo_url"], "label": slot_label(r["slot_index"])})
+        rows = conn.execute(
+            "SELECT id, photo_url FROM color_extras WHERE challenge_id=? AND participant_id=? ORDER BY created_at",
+            (challenge_id, participant_id),
+        ).fetchall()
+        for r in rows:
+            out.append({"id": "x:" + r["id"], "url": r["photo_url"], "label": "en plus"})
+    return out
+
+
+def get_grid(challenge_id: str, participant_id: str) -> dict:
+    """Grille de 9 cases (ids de photos ou None) ; les cases vides se remplissent avec les photos pas encore utilisées."""
+    pell = get_pellicule(challenge_id, participant_id)
+    ids = [p["id"] for p in pell]
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT cells, history FROM color_grids WHERE challenge_id=? AND participant_id=?",
+            (challenge_id, participant_id),
+        ).fetchone()
+    cells = _json.loads(row["cells"]) if row else [None] * 9
+    history = _json.loads(row["history"]) if row else []
+    cells = [c if c in ids else None for c in (cells + [None] * 9)[:9]]
+    used = set(c for c in cells if c)
+    free = [i for i in ids if i not in used]
+    for k in range(9):
+        if cells[k] is None and free:
+            cells[k] = free.pop(0)
+    return {"cells": cells, "can_undo": bool(history), "pellicule": pell}
+
+
+def save_grid(challenge_id: str, participant_id: str, new_cells: list, push_history: bool = True):
+    cur = get_grid(challenge_id, participant_id)["cells"]
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT history FROM color_grids WHERE challenge_id=? AND participant_id=?",
+            (challenge_id, participant_id),
+        ).fetchone()
+        history = _json.loads(row["history"]) if row else []
+        if push_history:
+            history = (history + [cur])[-50:]
+        conn.execute(
+            "INSERT INTO color_grids (challenge_id, participant_id, cells, history, updated_at) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(challenge_id, participant_id) DO UPDATE SET cells=excluded.cells, history=excluded.history, updated_at=excluded.updated_at",
+            (challenge_id, participant_id, _json.dumps(new_cells), _json.dumps(history), datetime.utcnow().isoformat()),
+        )
+
+
+def undo_grid(challenge_id: str, participant_id: str) -> bool:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT history FROM color_grids WHERE challenge_id=? AND participant_id=?",
+            (challenge_id, participant_id),
+        ).fetchone()
+        history = _json.loads(row["history"]) if row else []
+        if not history:
+            return False
+        prev = history.pop()
+        conn.execute(
+            "UPDATE color_grids SET cells=?, history=?, updated_at=? WHERE challenge_id=? AND participant_id=?",
+            (_json.dumps(prev), _json.dumps(history), datetime.utcnow().isoformat(), challenge_id, participant_id),
+        )
+    return True
