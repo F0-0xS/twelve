@@ -307,13 +307,14 @@
             placeholder="Ton prénom…"
             maxlength="30"
             autocomplete="off"
-            autofocus
+            value="{{ my_name }}"
+            {% if not my_name %}autofocus{% end %}
             required
           />
         </div>
         <button type="submit" class="btn btn-primary btn-full mt12" id="joinBtn">
           <span class="spinner" id="joinSpinner"></span>
-          Rejoindre →
+          {% if my_name %}Rejoindre en tant que {{ my_name }} →{% else %}Rejoindre →{% end %}
         </button>
       </form>
     {% end %}

@@ -123,8 +123,20 @@ class BaseHandler(tornado.web.RequestHandler):
     def on_finish(self):
         db._ctx.essai = False
 
+    def remember_name(self, name: str):
+        """Profil simple : le prénom est retenu sur ce téléphone (1 an)."""
+        self.set_secure_cookie("twelve_name", name[:30], expires_days=365)
+
+    def remembered_name(self) -> str:
+        raw = self.get_secure_cookie("twelve_name")
+        return raw.decode() if raw else ""
+
     def get_template_namespace(self):
         ns = super().get_template_namespace()
+        ns["my_name"] = self.remembered_name()
+        ns.setdefault("stats", {"defis": 0, "photos": 0, "tableaux": 0})
+        ns.setdefault("active_challenges", [])
+        ns.setdefault("past_challenges", [])
         ns["essai"] = self.get_cookie("twelve_essai") == "1"
         ns["daily_color"] = db.daily_color
         return ns
@@ -195,8 +207,18 @@ class HomeHandler(BaseHandler):
         today = _date.today().isoformat()
         active_challenges = [c for c in my_challenges if c.get("challenge_date", "") >= today]
         past_challenges   = [c for c in my_challenges if c.get("challenge_date", "") < today]
+        stats = {"defis": len(my_challenges), "photos": 0, "tableaux": 0}
+        try:
+            mapping = json.loads(raw.decode()) if raw else {}
+            for cid, pid in mapping.items():
+                stats["photos"] += sum(1 for c in db.get_contributions(cid)
+                                       if c["participant_id"] == pid and c["type"] == "photo")
+            stats["tableaux"] = sum(1 for c in my_challenges if (c.get("mode") or "libre") == "couleur")
+        except Exception:
+            pass
         self.render("home.html", error=None, my_challenges=my_challenges,
-                    active_challenges=active_challenges, past_challenges=past_challenges)
+                    active_challenges=active_challenges, past_challenges=past_challenges,
+                    stats=stats)
 
     def post(self):
         name = self.get_argument("name", "").strip()
@@ -438,6 +460,8 @@ class ChallengeHandler(BaseHandler):
             return
 
         name = self.get_argument("name", "").strip()
+        if name:
+            self.remember_name(name)
         if not name:
             contributions = db.get_contributions(challenge_id)
             slots = db.build_timeline(challenge, participants, contributions)
@@ -685,6 +709,7 @@ class RenameHandler(BaseHandler):
             return
         ok = db.update_participant_name(participant_id, new_name)
         if ok:
+            self.remember_name(new_name)
             self.redirect(f"/challenge/{challenge_id}")
         else:
             self.set_status(400)
