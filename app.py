@@ -366,6 +366,67 @@ class TableauxHandler(BaseHandler):
         self.render("tableaux.html", challenge=challenge, boards=json.dumps(boards), me=pid)
 
 
+# ─── Aperçu du lien (WhatsApp, iMessage…) ─────────────────────────────────────
+
+_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "fonts")
+
+def _font(size, bold=True):
+    from PIL import ImageFont
+    try:
+        return ImageFont.truetype(os.path.join(_FONT_DIR, "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"), size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def render_preview_png(challenge: dict, n_participants: int) -> bytes:
+    """Image 1200×630 pour l'aperçu du lien : « 12 », nom du défi, couleur du jour."""
+    from PIL import ImageDraw
+    W, H = 1200, 630
+    color = db.daily_color(challenge)
+    img = Image.new("RGB", (W, H), (13, 13, 13))
+    d = ImageDraw.Draw(img)
+    beige = (232, 213, 176)
+    if color:
+        hx = color["hex"].lstrip("#")
+        rgb = tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4))
+        d.rectangle([W - 420, 0, W, H], fill=rgb)          # bande couleur du jour
+        # petite grille 3×3 suggérée sur la bande
+        for k in range(1, 3):
+            d.line([(W - 420 + 140 * k, 0), (W - 420 + 140 * k, H)], fill=(13, 13, 13), width=4)
+            d.line([(W - 420, 210 * k), (W, 210 * k)], fill=(13, 13, 13), width=4)
+        text_w = W - 420 - 60
+    else:
+        text_w = W - 120
+    d.text((60, 40), "12", font=_font(190), fill=beige)
+    name = challenge["name"]
+    f = _font(64)
+    while d.textlength(name, font=f) > text_w and len(name) > 4:
+        name = name[:-2]
+    if name != challenge["name"]:
+        name = name.rstrip() + "…"
+    d.text((60, 290), name, font=f, fill=(240, 240, 240))
+    sub = f"Couleur du jour : {color['name']}" if color else "12 photos dans la journée"
+    d.text((60, 385), sub, font=_font(40, bold=False), fill=beige if color else (170, 170, 170))
+    who = f"{n_participants}/6 joueurs · rejoins le défi" if n_participants else "Rejoins le défi"
+    d.text((60, 540), who, font=_font(34, bold=False), fill=(150, 150, 150))
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
+class PreviewImageHandler(BaseHandler):
+    """GET /challenge/<id>/apercu.png"""
+    def get(self, challenge_id):
+        challenge = db.get_challenge(challenge_id)
+        if not challenge:
+            self.set_status(404)
+            return
+        png = render_preview_png(challenge, len(db.get_participants(challenge_id)))
+        self.set_header("Content-Type", "image/png")
+        self.set_header("Cache-Control", "public, max-age=600")
+        self.write(png)
+
+
 # ─── Challenge ────────────────────────────────────────────────────────────────
 
 class ChallengeHandler(BaseHandler):
@@ -1124,6 +1185,7 @@ def make_app():
             (r"/challenge/([^/]+)/forget", ForgetHandler),
             (r"/challenge/([^/]+)/summary", SummaryHandler),
             (r"/challenge/([^/]+)/grille", GrilleHandler),
+            (r"/challenge/([^/]+)/apercu.png", PreviewImageHandler),
             (r"/challenge/([^/]+)/tableaux", TableauxHandler),
             (r"/challenge/([^/]+)/push-subscribe", PushSubscribeHandler),
             # Legacy JSON endpoint (kept for web client)

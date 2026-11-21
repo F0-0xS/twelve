@@ -1,5 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{{ challenge['name'] }} – Twelve{% end %}
+{% block head_extra %}
+  {% set _oc = daily_color(challenge) %}
+  {% set _base = share_url.split('/challenge/')[0] %}
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Twelve" />
+  <meta property="og:title" content="« {{ challenge['name'] }} » · défi photo Twelve" />
+  <meta property="og:description" content="{% if _oc %}🎨 Couleur du jour : {{ _oc['name'] }}. {% end %}12 photos dans la journée. Rejoins-nous !" />
+  <meta property="og:url" content="{{ share_url }}" />
+  <meta property="og:image" content="{{ _base }}/challenge/{{ challenge['id'] }}/apercu.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+{% end %}
 
 {% block extra_styles %}
 /* ── Countdown ── */
@@ -356,6 +369,7 @@
   <div class="share-strip mt16">
     <div class="share-strip-row">
       <span class="share-url" id="shareUrl">{{ share_url }}</span>
+      <button class="btn btn-primary share-btn" id="inviteBtn" type="button">📲 Inviter</button>
       <button class="btn btn-outline share-btn" onclick="copyToClipboard('{{ share_url }}', this)">
         Copier
       </button>
@@ -751,6 +765,17 @@ function toggleRename() {
   if (btn) btn.style.display = active ? 'none' : '';
   if (active && input) { input.value = ''; input.focus(); }
 }
+
+
+// ── Inviter : feuille de partage du téléphone (WhatsApp, Messages…) ─────────
+(function(){
+  const b = document.getElementById('inviteBtn'); if (!b) return;
+  if (!navigator.share) { b.style.display = 'none'; return; }
+  b.addEventListener('click', async () => {
+    try { await navigator.share({ title: 'Twelve', text: {% raw json_encode("Rejoins mon défi photo « " + challenge['name'] + " » sur Twelve : 12 photos dans la journée ! " + (("🎨 Couleur du jour : " + daily_color(challenge)['name']) if daily_color(challenge) else "")) %}, url: {% raw json_encode(share_url) %} }); }
+    catch (e) {}
+  });
+})();
 
 // ── Push notifications ────────────────────────────────────────────────────────
 {% if participant %}
