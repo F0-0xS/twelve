@@ -69,67 +69,107 @@ def compute_recap_unlock(challenge: dict, participants: list) -> datetime:
     return next_day_dt - timedelta(minutes=min_offset)
 
 
-def main():
-    utc_now = datetime.utcnow()
-    print(f"[notify_hourly] Running at {utc_now.strftime('%Y-%m-%d %H:%M')} UTC")
+def notify_participant(challenge_id: str, participant_id: str, title: str, body: str, url: str = None) -> int:
+    """Envoie seulement aux téléphones d'un joueur."""
+    if url is None:
+        url = f"/challenge/{challenge_id}"
+    sent = 0
+    for sub in db.get_push_subscriptions(challenge_id):
+        if sub.get("participant_id") == participant_id:
+            if send_push(sub["subscription_json"], title, body, url):
+                sent += 1
+    return sent
 
-    # Include yesterday to catch recap notifications that fire after UTC midnight
-    yesterday = (utc_now.date() - timedelta(days=1)).isoformat()
+
+REMIND_BEFORE_CLOSE_MIN = 15   # rappel « plus que 15 min » si pas encore de photo
+RECAP_WINDOW_H = 6             # le récap est annoncé dans les 6 h qui suivent minuit
+
+
+def _color_hint(challenge: dict) -> str:
+    try:
+        c = db.daily_color(challenge)
+    except Exception:
+        c = None
+    return f" Couleur du jour : {c['name']}." if c else ""
+
+
+def main(utc_now: datetime = None):
+    """Envoie les notifications dues. Sans risque si appelée souvent (toutes les 5-10 min) :
+    chaque notification n'est envoyée qu'une fois (table notified)."""
+    utc_now = utc_now or datetime.utcnow()
+    print(f"[notify] {utc_now.strftime('%Y-%m-%d %H:%M')} UTC")
+
+    # Hier inclus : le récap tombe après minuit
+    yesterday = (utc_now.date() - timedelta(days=2)).isoformat()
     challenges = db.get_all_active_challenges(from_date=yesterday)
-    print(f"[notify_hourly] {len(challenges)} active challenge(s)")
 
     for challenge in challenges:
         cdate = challenge["challenge_date"]
         name  = challenge["name"]
         cid   = challenge["id"]
         subs  = db.get_push_subscriptions(cid)
-        print(f"[notify] {cid} ({cdate}): {len(subs)} sub(s)")
         if not subs:
             continue
 
-        # ── Slot notifications (independant des participants) ─────────────────
         utc_offset_min = challenge.get("utc_offset_minutes") or 0
         local_now  = utc_now + timedelta(minutes=utc_offset_min)
         local_hour = local_now.hour
         local_date = local_now.date().isoformat()
 
+        # ── Créneau ouvert (de HH:00 à HH:59) ────────────────────────────────
         if local_hour in db.SLOT_HOURS and local_date == cdate:
             slot_key = f"slot:{local_date}:{local_hour:02d}"
-            if db.has_notified(cid, slot_key):
-                print(f"[notify] slot {local_hour:02d}h → {name}: déjà envoyé, skip")
-            else:
+            if not db.has_notified(cid, slot_key):
                 sent = notify_challenge(
                     cid,
                     f"📸 Créneau {local_hour:02d}h00 ouvert !",
-                    f"C'est le moment de prendre ta photo pour « {name} ».",
+                    f"Prends ta photo pour « {name} ».{_color_hint(challenge)}",
                 )
                 if sent > 0:
                     db.mark_notified(cid, slot_key)
-                print(f"[notify] slot {local_hour:02d}h (UTC+{utc_offset_min//60}) → {name}: {sent} notifs")
+                print(f"[notify] ouverture {local_hour:02d}h → {name}: {sent}")
 
-        # ── Recap notification ────────────────────────────────────────────────
+            # ── Plus que 15 min : seulement à ceux qui n'ont rien posté ───────
+            if local_now.minute >= 60 - REMIND_BEFORE_CLOSE_MIN:
+                slot_index = db.SLOT_HOURS.index(local_hour)
+                done = {c["participant_id"] for c in db.get_contributions(cid) if c["slot_index"] == slot_index}
+                for p in db.get_participants(cid):
+                    if p["id"] in done:
+                        continue
+                    key = f"remind:{local_date}:{local_hour:02d}:{p['id']}"
+                    if db.has_notified(cid, key):
+                        continue
+                    sent = notify_participant(
+                        cid, p["id"],
+                        f"⏳ Plus que {60 - local_now.minute} min",
+                        f"Le créneau {local_hour:02d}h00 de « {name} » se ferme bientôt.",
+                        url=f"/challenge/{cid}/slot/{slot_index}",
+                    )
+                    if sent > 0:
+                        db.mark_notified(cid, key)
+                    print(f"[notify] rappel {local_hour:02d}h {p['name']} → {sent}")
+
+        # ── Récap disponible (dans les 6 h après son ouverture) ──────────────
         try:
             participants = db.get_participants(cid)
             recap_unlock = compute_recap_unlock(challenge, participants)
-            if (utc_now.date() == recap_unlock.date() and
-                    utc_now.hour == recap_unlock.hour):
-                recap_key = f"recap:{recap_unlock.strftime('%Y-%m-%d:%H')}"
-                if db.has_notified(cid, recap_key):
-                    print(f"[notify] récap → {name}: déjà envoyé, skip")
-                else:
+            if recap_unlock <= utc_now < recap_unlock + timedelta(hours=RECAP_WINDOW_H):
+                recap_key = f"recap:{cdate}"
+                if not db.has_notified(cid, recap_key):
+                    couleur = (challenge.get("mode") or "libre") == "couleur"
                     sent = notify_challenge(
                         cid,
-                        "🎞️ Le récap est disponible !",
-                        f"La journée est terminée — découvrez toutes les photos de « {name} » !",
-                        url=f"/challenge/{cid}/summary",
+                        "🖼️ Les tableaux sont prêts !" if couleur else "🎞️ Le récap est disponible !",
+                        f"La journée « {name} » est finie : viens voir les photos de tout le monde.",
+                        url=f"/challenge/{cid}/tableaux" if couleur else f"/challenge/{cid}/summary",
                     )
                     if sent > 0:
                         db.mark_notified(cid, recap_key)
-                    print(f"[notify] récap unlock {recap_unlock.strftime('%H:%M')} UTC → {name}: {sent} notifs")
+                    print(f"[notify] récap → {name}: {sent}")
         except Exception as e:
             print(f"[notify] recap check failed for {cid}: {e}")
 
-    print("[notify_hourly] Done.")
+    print("[notify] fini.")
 
 
 if __name__ == "__main__":

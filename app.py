@@ -18,20 +18,21 @@ from PIL import Image, ImageOps
 
 import db
 
-# ─── Auto-notify: lance notify_hourly au premier accès de chaque heure UTC ────
+# ─── Rappels : notify_hourly.main() au plus toutes les 4 min ──────────────────
+# Déclenché par /api/tick (appelé toutes les 10 min par GitHub Actions, voir
+# .github/workflows/rappels.yml) et, en secours, par chaque visite du site.
+# Sans risque : chaque notification n'est envoyée qu'une fois (table notified).
 _notify_lock = threading.Lock()
-_last_notify_hour: datetime | None = None
+_last_notify_run: datetime | None = None
+TICK_MIN_GAP = timedelta(minutes=4)
 
-def _maybe_notify():
-    """Appelé à chaque requête. Lance notify_hourly.main() en background
-    si l'heure UTC a changé depuis le dernier appel. Idempotent grâce à
-    notification_log dans la DB."""
-    global _last_notify_hour
-    now_h = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+def _maybe_notify() -> bool:
+    global _last_notify_run
+    now = datetime.utcnow()
     with _notify_lock:
-        if _last_notify_hour == now_h:
-            return
-        _last_notify_hour = now_h
+        if _last_notify_run and now - _last_notify_run < TICK_MIN_GAP:
+            return False
+        _last_notify_run = now
     def _run():
         try:
             import notify_hourly
@@ -39,6 +40,16 @@ def _maybe_notify():
         except Exception as _e:
             print(f"[auto-notify] {_e}")
     threading.Thread(target=_run, daemon=True).start()
+    return True
+
+
+class TickHandler(tornado.web.RequestHandler):
+    """GET /api/tick — public et sans clé : lance les rappels dus (au plus toutes les 4 min)."""
+    def get(self):
+        started = _maybe_notify()
+        self.set_header("Content-Type", "text/plain")
+        self.set_header("Cache-Control", "no-store")
+        self.write("lancé" if started else "déjà lancé il y a moins de 4 min")
 
 # ─── Utility ──────────────────────────────────────────────────────────────────
 
@@ -1080,6 +1091,7 @@ def make_app():
         [
             (r"/", HomeHandler),
             (r"/essai", EssaiHandler),
+            (r"/api/tick", TickHandler),
             (r"/challenge/([^/]+)", ChallengeHandler),
             (r"/challenge/([^/]+)/slot/(\d+)", SlotHandler),
             (r"/challenge/([^/]+)/rename", RenameHandler),

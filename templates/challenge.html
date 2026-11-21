@@ -346,7 +346,7 @@
     </form>
   </div>
   <div id="notif-banner" style="margin-top:8px;">
-    <button class="btn btn-outline btn-full" id="notifBtn" onclick="subscribeNotifs()">🔔 Activer les notifications</button>
+    <button class="btn btn-outline btn-full" id="notifBtn" onclick="subscribeNotifs()">🔔 Activer les rappels</button>
   </div>
   {% end %}
 
@@ -765,12 +765,24 @@ function toggleRename() {
 
   function showNotifOk() {
     const el = document.getElementById('notif-banner');
-    if (el) el.innerHTML = '<p style="color:var(--muted);font-size:.82rem;padding:6px 0;">🔔 Notifications activées pour ce défi.</p>';
+    if (el) el.innerHTML = '<p style="color:var(--muted);font-size:.82rem;padding:6px 0;">🔔 Rappels activés : ouverture des créneaux, « plus que 15 min » et récap.</p>';
   }
+
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const STANDALONE = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  function showInstallHelp() {
+    const el = document.getElementById('notif-banner');
+    if (el) el.innerHTML = '<div style="border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;gap:12px;align-items:center;">'
+      + '<div style="font-size:1.8rem;">📲</div><div style="font-size:.85rem;line-height:1.4;"><b>Rappels sur l\'iPhone</b><br>'
+      + 'Partager ⬆️ → « Sur l\'écran d\'accueil », puis ouvre Twelve depuis l\'icône.</div></div>';
+  }
+  if (IOS && !STANDALONE) showInstallHelp();
 
   window.subscribeNotifs = async function() {
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-      alert('Les notifications push ne sont pas disponibles sur ce navigateur.');
+      if (IOS) { showInstallHelp(); return; }
+      const btn = document.getElementById('notifBtn');
+      if (btn) btn.textContent = '🔕 Rappels impossibles sur ce navigateur';
       return;
     }
     const perm = await Notification.requestPermission();

@@ -1,0 +1,15 @@
+# Rappels Twelve : réveille le site toutes les 10 minutes pour envoyer
+# les notifications dues (ouverture de créneau, « plus que 15 min », récap).
+# Ne tourne que sur la branche par défaut du dépôt.
+name: Rappels Twelve
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Réveiller le site
+        run: curl -fsS --max-time 30 https://fooxs.pythonanywhere.com/api/tick || echo "site injoignable"
